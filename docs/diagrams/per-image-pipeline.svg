@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="520" viewBox="0 0 680 520" role="img">
+<title>Plinth per-image pipeline</title>
+<desc>Five steps for one image: fetch the source from an allowlisted host, normalise orientation and colour, measure the background and trim to content, re-centre on a 4:5 white canvas at 78 percent share, then encode webp and write the result record under a hash plus version key.</desc>
+<style>
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+.th{font-size:14px;font-weight:500;fill:#1f1f1e}
+.ts{font-size:12px;fill:#5f5e5a}
+.gray{fill:#f7f6f2;stroke:#c9c7bf;stroke-width:0.75}
+.blue{fill:#eef4fb;stroke:#4a80c4;stroke-width:0.75}
+.amber{fill:#fdf3e1;stroke:#d99a2b;stroke-width:0.75}
+.arr{stroke:#73726c;stroke-width:1.5;fill:none}
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#73726c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect class="gray" x="210" y="40" width="260" height="56" rx="8"/>
+<text class="th" x="340" y="58" text-anchor="middle" dominant-baseline="central">Fetch source</text>
+<text class="ts" x="340" y="78" text-anchor="middle" dominant-baseline="central">allowlisted host, size cap</text>
+<line x1="340" y1="96" x2="340" y2="126" class="arr" marker-end="url(#arrow)"/>
+<rect class="blue" x="210" y="136" width="260" height="56" rx="8"/>
+<text class="th" x="340" y="154" text-anchor="middle" dominant-baseline="central">Normalise</text>
+<text class="ts" x="340" y="174" text-anchor="middle" dominant-baseline="central">auto-rotate, sRGB, strip</text>
+<line x1="340" y1="192" x2="340" y2="222" class="arr" marker-end="url(#arrow)"/>
+<rect class="blue" x="210" y="232" width="260" height="56" rx="8"/>
+<text class="th" x="340" y="250" text-anchor="middle" dominant-baseline="central">Measure and trim</text>
+<text class="ts" x="340" y="270" text-anchor="middle" dominant-baseline="central">sample corners, cut ground</text>
+<line x1="340" y1="288" x2="340" y2="318" class="arr" marker-end="url(#arrow)"/>
+<rect class="blue" x="210" y="328" width="260" height="56" rx="8"/>
+<text class="th" x="340" y="346" text-anchor="middle" dominant-baseline="central">Re-centre on canvas</text>
+<text class="ts" x="340" y="366" text-anchor="middle" dominant-baseline="central">4:5 white, 78% share</text>
+<line x1="340" y1="384" x2="340" y2="414" class="arr" marker-end="url(#arrow)"/>
+<rect class="amber" x="210" y="424" width="260" height="56" rx="8"/>
+<text class="th" x="340" y="442" text-anchor="middle" dominant-baseline="central">Encode and record</text>
+<text class="ts" x="340" y="462" text-anchor="middle" dominant-baseline="central">webp + verdict + hash key</text>
+</svg>
