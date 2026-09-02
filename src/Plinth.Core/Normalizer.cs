@@ -71,7 +71,11 @@ public static class Normalizer
             if (IsPassthrough(info, m, recipe)) return Passthrough("already-normalised");
 
             sw.Restart();
-            var rendered = Renderer.Render(source, info, m, recipe);
+            // A pack shot whose ground already is the recipe background cards on
+            // it; one shot on its own grey cards on that grey, so the extended
+            // canvas is seamless rather than a grey box floated on white.
+            var canvasBackground = ground.MatchesBackground ? recipe.Background : m.Ground.Sampled;
+            var rendered = Renderer.Render(source, info, m, recipe, canvasBackground);
             tRender = sw.ElapsedMilliseconds;
 
             var output = new OutputRecord(rendered.Info.Width, rendered.Info.Height, rendered.Info.Bytes, rendered.Info.Format);

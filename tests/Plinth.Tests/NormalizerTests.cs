@@ -89,6 +89,20 @@ public class NormalizerTests
     }
 
     [Fact]
+    public void A_pack_shot_on_a_grey_ground_is_carded_on_that_grey_not_on_white()
+    {
+        var r = Normalizer.Normalize(Synthetic.PackShot(800, 1000, Grey, 250, 300, 300, 400, Black), Recipe.Default);
+        Assert.True(r.Record.Verdict.PackShot);
+        Assert.Equal("ok", r.Status);
+        Assert.False(r.Record.Ground.MatchesBackground);
+
+        using var img = Image.NewFromBuffer(r.Output!);
+        var corner = img.Getpoint(2, 2);
+        for (var band = 0; band < 3; band++)
+            Assert.InRange(corner[band], 0x80 - 3, 0x80 + 3);
+    }
+
+    [Fact]
     public void A_source_that_carries_metadata_does_not_pass_through()
     {
         var clean = Normalizer.Normalize(Shot(), Recipe.Default).Output!;

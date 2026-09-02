@@ -121,7 +121,7 @@ public class GoldenTests
         Assert.InRange(m.Box.Width, 194, 212);
         Assert.InRange(m.Box.Height, 394, 412);
 
-        var r = Renderer.Render(rotated, info, m, recipe);
+        var r = Renderer.Render(rotated, info, m, recipe, recipe.Background);
         using var img = Image.NewFromBuffer(r.Bytes);
         var t = img.FindTrim(threshold: 12, background: [255, 255, 255]).Select(Convert.ToInt32).ToArray();
         // Same aspect as the rotated box - taller than wide - and centred.
