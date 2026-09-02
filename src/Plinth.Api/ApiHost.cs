@@ -44,6 +44,7 @@ public static class ApiHost
             if (string.IsNullOrEmpty(src)) return Results.BadRequest(new { error = "src is required" });
             if (o.SigningKey is not null && !RequestSigning.Verify(src, sig, o.SigningKey))
                 return Results.Json(new { error = "bad signature" }, statusCode: StatusCodes.Status403Forbidden);
+            if (SourceNotAllowed(src, o) is { } notAllowed) return notAllowed;
 
             var result = await pipeline.ProcessUrlAsync(src, recipe, ct);
             Stamp(http, result);
@@ -61,14 +62,22 @@ public static class ApiHost
             if (string.IsNullOrEmpty(src)) return Results.BadRequest(new { error = "src is required" });
             if (o.SigningKey is not null && !RequestSigning.Verify(src, sig, o.SigningKey))
                 return Results.Json(new { error = "bad signature" }, statusCode: StatusCodes.Status403Forbidden);
+            if (SourceNotAllowed(src, o) is { } notAllowed) return notAllowed;
             var result = await pipeline.ProcessUrlAsync(src, recipe, ct);
             return Results.Text(result.Record.ToJson(), "application/json");
         });
 
-        app.MapPost("/v1/normalize", async (string? recipe, PlinthPipeline pipeline, HttpContext http, CancellationToken ct) =>
+        app.MapPost("/v1/normalize", async (string? recipe, PlinthPipeline pipeline, PipelineOptions o, HttpContext http, CancellationToken ct) =>
         {
             using var ms = new MemoryStream();
-            await http.Request.Body.CopyToAsync(ms, ct);
+            var buffer = new byte[81920];
+            int read;
+            while ((read = await http.Request.Body.ReadAsync(buffer, ct)) > 0)
+            {
+                if (ms.Length + read > o.Fetch.MaxBytes)
+                    return Results.Json(new { error = "body too large" }, statusCode: StatusCodes.Status413PayloadTooLarge);
+                ms.Write(buffer, 0, read);
+            }
             if (ms.Length == 0) return Results.BadRequest(new { error = "empty body" });
             var result = await pipeline.ProcessBytesAsync(ms.ToArray(), recipe, null, ct);
             Stamp(http, result);
@@ -77,6 +86,15 @@ public static class ApiHost
             return Results.Bytes(result.Bytes!, ImageFormats.MimeTypeFor(result.Record.Output!.Format));
         });
     }
+
+    /// <summary>
+    /// The redirect fallback on failure must never send a client to an arbitrary host: gate
+    /// <c>src</c> against the same allowlist the fetcher itself enforces, before the pipeline runs.
+    /// </summary>
+    private static IResult? SourceNotAllowed(string src, PipelineOptions o) =>
+        Uri.TryCreate(src, UriKind.Absolute, out var uri) && o.Fetch.Allows(uri)
+            ? null
+            : Results.BadRequest(new { error = "source not allowed" });
 
     private static void Stamp(HttpContext http, PipelineResult r)
     {

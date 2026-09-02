@@ -93,10 +93,20 @@ public class ApiTests : IAsyncLifetime
     public async Task Missing_src_unknown_recipe_and_disallowed_host_are_client_errors_or_failures()
     {
         Assert.Equal(HttpStatusCode.BadRequest, (await _client.GetAsync("/v1/image")).StatusCode);
+
+        // A failed pipeline result on an allowlisted source still uses the ordinary redirect fallback.
         var unknownRecipe = await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(Url)}&recipe=nope");
         Assert.Equal(HttpStatusCode.Found, unknownRecipe.StatusCode);
-        var off = await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString("https://evil.com/a.jpg")}");
-        Assert.Equal(HttpStatusCode.Found, off.StatusCode);
+
+        // A disallowed host must never be handed back as a redirect target: reject before the pipeline runs.
+        var evil = Uri.EscapeDataString("https://evil.com/a.jpg");
+        var off = await _client.GetAsync($"/v1/image?src={evil}");
+        Assert.Equal(HttpStatusCode.BadRequest, off.StatusCode);
+        using (var doc = JsonDocument.Parse(await off.Content.ReadAsStringAsync()))
+            Assert.Equal("source not allowed", doc.RootElement.GetProperty("error").GetString());
+
+        var offInspect = await _client.GetAsync($"/v1/inspect?src={evil}");
+        Assert.Equal(HttpStatusCode.BadRequest, offInspect.StatusCode);
     }
 
     [Fact]
@@ -118,6 +128,21 @@ public class ApiTests : IAsyncLifetime
 
         var junk = await _client.PostAsync("/v1/normalize", new ByteArrayContent("nope"u8.ToArray()));
         Assert.Equal(HttpStatusCode.UnprocessableEntity, junk.StatusCode);
+    }
+
+    [Fact]
+    public async Task Normalize_rejects_a_body_larger_than_the_fetch_policy_allows()
+    {
+        await DisposeAsync();
+        var capped = new PipelineOptions(
+            new FetchPolicy(FetchPolicy.FromHostList("cdn.example.com").AllowedHosts, MaxBytes: 1024),
+            "none", RecipeCatalog.DefaultOnly, null, "redirect", 1);
+        await StartAsync(capped);
+
+        var tooLarge = await _client.PostAsync("/v1/normalize", new ByteArrayContent(new byte[2048]));
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, tooLarge.StatusCode);
+        using var doc = JsonDocument.Parse(await tooLarge.Content.ReadAsStringAsync());
+        Assert.Equal("body too large", doc.RootElement.GetProperty("error").GetString());
     }
 
     [Fact]
