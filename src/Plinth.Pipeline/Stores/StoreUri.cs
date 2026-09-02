@@ -19,7 +19,8 @@ public static class StoreUri
         {
             var containerName = uri["azblob://".Length..];
             if (containerName.Length == 0) throw new PlinthException("azblob:// store needs a container name");
-            return AzureBlobStore.FromEnvironment(containerName, env);
+            try { return AzureBlobStore.FromEnvironment(containerName, env); }
+            catch (Exception e) when (e is not PlinthException) { throw new PlinthException("azblob store configuration is invalid"); }
         }
         throw new PlinthException($"unsupported store URI '{uri}'");
     }

@@ -41,5 +41,9 @@ public class PipelineOptionsTests
         Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_ON_FAILURE" ? "explode" : null));
         Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_INFLIGHT" ? "0" : null));
         Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_INFLIGHT" ? "lots" : null));
+
+        var missing = Path.Combine(Path.GetTempPath(), "plinth-no-such-recipes-" + Guid.NewGuid().ToString("N") + ".json");
+        var unreadable = Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_RECIPES" ? missing : null));
+        Assert.Equal($"PLINTH_RECIPES: could not read {missing}", unreadable.Message);
     }
 }

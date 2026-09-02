@@ -19,5 +19,6 @@ public class NullStoreTests
         await store.PutAsync(r.Record.Key, r.Output!, r.Record);
         Assert.False(await store.ExistsAsync(r.Record.Key));
         Assert.Null(await store.TryGetAsync(r.Record.Key));
+        Assert.Null(await store.TryGetRecordAsync(r.Record.Key));
     }
 }

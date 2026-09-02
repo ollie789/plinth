@@ -11,7 +11,18 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
 {
     public RecipeCatalog Recipes { get; } = recipes;
 
-    public async Task<PipelineResult> ProcessUrlAsync(string url, string? recipeName, CancellationToken ct = default)
+    public Task<PipelineResult> ProcessUrlAsync(string url, string? recipeName, CancellationToken ct = default) =>
+        FromUrlAsync(url, recipeName, recordOnly: false, ct);
+
+    /// <summary>
+    /// Same flow as <see cref="ProcessUrlAsync"/>, except a store hit is satisfied from the
+    /// record alone: a caller that only wants the JSON should never make the store move the
+    /// image bytes. A hit comes back with <c>FromStore: true</c> and no <c>Bytes</c>.
+    /// </summary>
+    public Task<PipelineResult> InspectUrlAsync(string url, string? recipeName, CancellationToken ct = default) =>
+        FromUrlAsync(url, recipeName, recordOnly: true, ct);
+
+    private async Task<PipelineResult> FromUrlAsync(string url, string? recipeName, bool recordOnly, CancellationToken ct)
     {
         Recipe recipe;
         try { recipe = Recipes.Get(recipeName); }
@@ -22,8 +33,16 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
         catch (PlinthException e) { return Failed(url, url, recipe, e.Message); }
 
         var key = OutputKey.Compute(sourceId, recipe);
-        var cached = await store.TryGetAsync(key, ct);
-        if (cached is not null) return new PipelineResult(cached.Record.Status, cached.Bytes, cached.Record, FromStore: true);
+        if (recordOnly)
+        {
+            var record = await store.TryGetRecordAsync(key, ct);
+            if (record is not null) return new PipelineResult(record.Status, null, record, FromStore: true);
+        }
+        else
+        {
+            var cached = await store.TryGetAsync(key, ct);
+            if (cached is not null) return new PipelineResult(cached.Record.Status, cached.Bytes, cached.Record, FromStore: true);
+        }
 
         byte[] bytes;
         try { bytes = (await fetcher.FetchAsync(url, ct)).Bytes; }

@@ -17,7 +17,7 @@ public static class ApiHost
     {
         var builder = WebApplication.CreateBuilder(args);
         options ??= PipelineOptions.FromEnvironment(Environment.GetEnvironmentVariable);
-        Engine.Init(options.Concurrency);
+        Engine.Init(options.Concurrency ?? Environment.ProcessorCount);
 
         builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = options.Fetch.MaxBytes);
         builder.Services.AddSingleton(options);
@@ -79,7 +79,7 @@ public static class ApiHost
             await gate.WaitAsync(ct);
             try
             {
-                var result = await pipeline.ProcessUrlAsync(src, recipe, ct);
+                var result = await pipeline.InspectUrlAsync(src, recipe, ct);
                 return Results.Text(result.Record.ToJson(), "application/json");
             }
             finally { gate.Release(); }

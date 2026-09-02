@@ -169,6 +169,22 @@ public class ApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Inspect_reads_only_the_record_when_the_store_already_holds_the_key()
+    {
+        Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(Url)}")).StatusCode);
+        var imageReadsBefore = _store.TryGetCalls;
+
+        var inspect = await _client.GetAsync($"/v1/inspect?src={Uri.EscapeDataString(Url)}");
+        Assert.Equal(HttpStatusCode.OK, inspect.StatusCode);
+        using var doc = JsonDocument.Parse(await inspect.Content.ReadAsStringAsync());
+        Assert.Equal("ok", doc.RootElement.GetProperty("status").GetString());
+
+        Assert.Equal(1, _store.TryGetRecordCalls);          // the record was read
+        Assert.Equal(imageReadsBefore, _store.TryGetCalls); // the image was not
+        Assert.Equal(1, _fetcher.Calls);                    // and nothing was refetched
+    }
+
+    [Fact]
     public async Task Normalize_rejects_a_body_larger_than_the_fetch_policy_allows()
     {
         await DisposeAsync();

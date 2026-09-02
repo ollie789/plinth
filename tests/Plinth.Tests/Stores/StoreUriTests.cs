@@ -23,4 +23,14 @@ public class StoreUriTests
         Assert.Throws<PlinthException>(() => StoreUri.Open("s3://bucket", NoEnv));
         Assert.Throws<PlinthException>(() => StoreUri.Open("", NoEnv));
     }
+
+    [Fact]
+    public void A_malformed_azure_connection_string_fails_without_repeating_itself()
+    {
+        const string secret = "Endpoint=nonsense;AccountKey=hunter2";
+        var e = Assert.Throws<PlinthException>(() =>
+            StoreUri.Open("azblob://tiles", k => k == "PLINTH_AZURE_STORAGE_CONNECTION" ? secret : null));
+        Assert.Equal("azblob store configuration is invalid", e.Message);
+        Assert.DoesNotContain("hunter2", e.ToString(), StringComparison.Ordinal);
+    }
 }

@@ -20,7 +20,7 @@ public sealed record PipelineOptions(
         var onFailure = env("PLINTH_ON_FAILURE") ?? "redirect";
         if (onFailure is not ("redirect" or "error")) throw new PlinthException("PLINTH_ON_FAILURE must be redirect or error");
         var recipesPath = env("PLINTH_RECIPES");
-        var recipes = string.IsNullOrEmpty(recipesPath) ? RecipeCatalog.DefaultOnly : RecipeCatalog.FromJson(File.ReadAllText(recipesPath));
+        var recipes = string.IsNullOrEmpty(recipesPath) ? RecipeCatalog.DefaultOnly : RecipeCatalog.FromJson(ReadRecipes(recipesPath));
         int? concurrency = int.TryParse(env("PLINTH_CONCURRENCY"), out var c) && c > 0 ? c : null;
         var signing = env("PLINTH_SIGNING_KEY");
         return new PipelineOptions(
@@ -44,5 +44,18 @@ public sealed record PipelineOptions(
         if (!int.TryParse(raw, out var n) || n < 1)
             throw new PlinthException("PLINTH_MAX_INFLIGHT must be an integer of 1 or more");
         return n;
+    }
+
+    /// <summary>
+    /// A missing or unreadable recipes file should name the path that was tried; the raw I/O
+    /// message ("Could not find file '/app/x.json'") buries it in framework wording.
+    /// </summary>
+    private static string ReadRecipes(string path)
+    {
+        try { return File.ReadAllText(path); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            throw new PlinthException($"PLINTH_RECIPES: could not read {path}");
+        }
     }
 }

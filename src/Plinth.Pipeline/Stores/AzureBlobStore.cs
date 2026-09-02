@@ -14,12 +14,21 @@ public sealed class AzureBlobStore(BlobContainerClient container) : IOutputStore
     public static AzureBlobStore FromEnvironment(string containerName, Func<string, string?> env)
     {
         var conn = env("PLINTH_AZURE_STORAGE_CONNECTION");
-        if (!string.IsNullOrEmpty(conn))
-            return new AzureBlobStore(new BlobContainerClient(conn, containerName));
         var account = env("PLINTH_AZURE_STORAGE_ACCOUNT");
-        if (!string.IsNullOrEmpty(account))
-            return new AzureBlobStore(new BlobContainerClient(new Uri(new Uri(account), containerName), new DefaultAzureCredential()));
-        throw new PlinthException("azblob store needs PLINTH_AZURE_STORAGE_CONNECTION or PLINTH_AZURE_STORAGE_ACCOUNT");
+        if (string.IsNullOrEmpty(conn) && string.IsNullOrEmpty(account))
+            throw new PlinthException("azblob store needs PLINTH_AZURE_STORAGE_CONNECTION or PLINTH_AZURE_STORAGE_ACCOUNT");
+        try
+        {
+            return !string.IsNullOrEmpty(conn)
+                ? new AzureBlobStore(new BlobContainerClient(conn, containerName))
+                : new AzureBlobStore(new BlobContainerClient(new Uri(new Uri(account!), containerName), new DefaultAzureCredential()));
+        }
+        catch (Exception e) when (e is not PlinthException)
+        {
+            // Deliberately not e.Message: the SDK quotes the connection string it choked on,
+            // account key included, and this message ends up in logs and error responses.
+            throw new PlinthException("azblob store configuration is invalid");
+        }
     }
 
     public async Task<bool> ExistsAsync(string key, CancellationToken ct = default) =>
@@ -40,6 +49,16 @@ public sealed class AzureBlobStore(BlobContainerClient container) : IOutputStore
         {
             var img = await container.GetBlobClient(StoreLayout.ImagePath(key, record.Output.Format)).DownloadContentAsync(ct);
             return new StoredOutput(img.Value.Content.ToArray(), record);
+        }
+        catch (RequestFailedException e) when (e.Status == 404) { return null; }
+    }
+
+    public async Task<ResultRecord?> TryGetRecordAsync(string key, CancellationToken ct = default)
+    {
+        try
+        {
+            var r = await container.GetBlobClient(StoreLayout.RecordPath(key)).DownloadContentAsync(ct);
+            return ResultRecord.FromJson(r.Value.Content.ToString());
         }
         catch (RequestFailedException e) when (e.Status == 404) { return null; }
     }

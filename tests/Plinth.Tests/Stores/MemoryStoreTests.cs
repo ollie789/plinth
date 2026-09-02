@@ -36,6 +36,18 @@ public abstract class OutputStoreContract
     }
 
     [Fact]
+    public async Task Record_only_reads_return_the_record_and_nothing_for_a_missing_key()
+    {
+        var store = Create();
+        Assert.Null(await store.TryGetRecordAsync(new string('b', 64)));
+        var r = Sample();
+        await store.PutAsync(r.Record.Key, r.Output!, r.Record);
+        var got = await store.TryGetRecordAsync(r.Record.Key);
+        Assert.NotNull(got);
+        Assert.Equal(r.Record.ToJson(), got!.ToJson());
+    }
+
+    [Fact]
     public async Task Failed_records_are_never_stored()
     {
         var store = Create();

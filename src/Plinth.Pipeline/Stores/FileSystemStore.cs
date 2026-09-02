@@ -21,6 +21,12 @@ public sealed class FileSystemStore(string root) : IOutputStore
         return new StoredOutput(await File.ReadAllBytesAsync(imagePath, ct), record);
     }
 
+    public async Task<ResultRecord?> TryGetRecordAsync(string key, CancellationToken ct = default)
+    {
+        var recordPath = Path.Combine(Root, StoreLayout.RecordPath(key));
+        return File.Exists(recordPath) ? ResultRecord.FromJson(await File.ReadAllTextAsync(recordPath, ct)) : null;
+    }
+
     public async Task PutAsync(string key, byte[] bytes, ResultRecord record, CancellationToken ct = default)
     {
         StoreGuard.RequireStorable(record);
