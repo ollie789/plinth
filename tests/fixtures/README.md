@@ -9,3 +9,6 @@ These images are retailer property used here solely as test inputs for an
 image-processing tool and are not redistributed for any other purpose.
 Re-fetch rather than edit; if a host changes its imagery, refresh the file
 and regenerate its golden record.
+
+A new fixture needs one run with `PLINTH_UPDATE_GOLDEN=1 dotnet test` to
+create its golden record; a plain run fails on a missing record by design.

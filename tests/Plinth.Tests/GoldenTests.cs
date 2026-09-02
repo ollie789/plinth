@@ -48,10 +48,16 @@ public class GoldenTests
                 r.Record.Output!, PerceptualHash.ToHex(PerceptualHash.DHash(r.Output!)));
             var path = Path.Combine(Fixtures.GoldenDir, Path.ChangeExtension(name, ".json"));
 
-            if (update || !File.Exists(path))
+            if (update)
             {
                 File.WriteAllText(path, JsonSerializer.Serialize(actual, Json));
                 File.WriteAllText(Path.Combine(SourceGoldenDir(), Path.GetFileName(path)), JsonSerializer.Serialize(actual, Json));
+                continue;
+            }
+
+            if (!File.Exists(path))
+            {
+                failures.Add($"{name}: no golden record at {path} (run with PLINTH_UPDATE_GOLDEN=1 to create it)");
                 continue;
             }
 
