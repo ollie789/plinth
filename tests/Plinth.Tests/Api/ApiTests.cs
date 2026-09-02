@@ -15,17 +15,19 @@ namespace Plinth.Tests.Api;
 public class ApiTests : IAsyncLifetime
 {
     private const string Url = "https://cdn.example.com/a.jpg";
+    private const string OtherUrl = "https://cdn.example.com/b.jpg";
     private static readonly Rgb White = Rgb.Parse("#ffffff");
     private static readonly Rgb Black = Rgb.Parse("#000000");
     private static byte[] Shot() => Synthetic.PackShot(800, 1000, White, 200, 300, 300, 400, Black);
+    private static byte[] Shot2() => Synthetic.PackShot(820, 1000, White, 200, 300, 300, 400, Black);
 
     private WebApplication _app = null!;
     private HttpClient _client = null!;
-    private readonly FakeFetcher _fetcher = new FakeFetcher().With(Url, Shot());
+    private readonly FakeFetcher _fetcher = new FakeFetcher().With(Url, Shot()).With(OtherUrl, Shot2());
     private readonly MemoryStore _store = new();
 
-    private PipelineOptions Options(string? signingKey = null, string onFailure = "redirect") =>
-        new(FetchPolicy.FromHostList("cdn.example.com"), "none", RecipeCatalog.DefaultOnly, signingKey, onFailure, 1);
+    private PipelineOptions Options(string? signingKey = null, string onFailure = "redirect", int maxInFlight = 4) =>
+        new(FetchPolicy.FromHostList("cdn.example.com"), "none", RecipeCatalog.DefaultOnly, signingKey, onFailure, 1, maxInFlight);
 
     private async Task StartAsync(PipelineOptions options)
     {
@@ -87,6 +89,42 @@ public class ApiTests : IAsyncLifetime
         var sig = RequestSigning.Sign(Url, "k");
         var signed = await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(Url)}&sig={sig}");
         Assert.Equal(HttpStatusCode.OK, signed.StatusCode);
+
+        // The signature is checked before the allowlist, so an unsigned caller learns nothing
+        // about which hosts are configured: every unsigned request looks the same from outside.
+        var offList = await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString("https://evil.com/a.jpg")}");
+        Assert.Equal(HttpStatusCode.Forbidden, offList.StatusCode);
+    }
+
+    [Fact]
+    public async Task Normalize_requires_a_signature_over_the_body_when_a_key_is_configured()
+    {
+        await DisposeAsync();
+        await StartAsync(Options(signingKey: "k"));
+        var body = Shot();
+
+        var unsigned = await _client.PostAsync("/v1/normalize", new ByteArrayContent(body));
+        Assert.Equal(HttpStatusCode.Forbidden, unsigned.StatusCode);
+        using (var doc = JsonDocument.Parse(await unsigned.Content.ReadAsStringAsync()))
+            Assert.Equal("bad signature", doc.RootElement.GetProperty("error").GetString());
+
+        var content = new ByteArrayContent(body);
+        content.Headers.Add(ApiHost.SignatureHeader, RequestSigning.SignBody(body, "k"));
+        var signed = await _client.PostAsync("/v1/normalize", content);
+        Assert.Equal(HttpStatusCode.OK, signed.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_single_in_flight_slot_queues_concurrent_requests_rather_than_rejecting_them()
+    {
+        await DisposeAsync();
+        await StartAsync(Options(maxInFlight: 1));
+
+        var first = _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(Url)}");
+        var second = _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(OtherUrl)}");
+        var responses = await Task.WhenAll(first, second);
+
+        Assert.All(responses, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
     }
 
     [Fact]

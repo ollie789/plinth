@@ -17,4 +17,15 @@ public static class RequestSigning
         var expected = HMACSHA256.HashData(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes(src));
         return CryptographicOperations.FixedTimeEquals(given, expected);
     }
+
+    /// <summary>
+    /// The signature for a request whose payload is the body rather than a URL: the HMAC is
+    /// taken over the body's lowercase hex sha256, so a caller never has to stream the body
+    /// twice and the signed string stays a short, printable digest.
+    /// </summary>
+    public static string SignBody(byte[] body, string key) => Sign(Digest(body), key);
+
+    public static bool VerifyBody(byte[] body, string? sig, string key) => Verify(Digest(body), sig, key);
+
+    private static string Digest(byte[] body) => Convert.ToHexStringLower(SHA256.HashData(body));
 }

@@ -18,6 +18,7 @@ public class PipelineOptionsTests
             ["PLINTH_SIGNING_KEY"] = "secret",
             ["PLINTH_ON_FAILURE"] = "error",
             ["PLINTH_CONCURRENCY"] = "2",
+            ["PLINTH_MAX_INFLIGHT"] = "9",
         };
         var o = PipelineOptions.FromEnvironment(k => env.GetValueOrDefault(k));
         Assert.Equal(new HashSet<string> { "a.com", "b.com" }, o.Fetch.AllowedHosts);
@@ -26,6 +27,7 @@ public class PipelineOptionsTests
         Assert.Equal("secret", o.SigningKey);
         Assert.Equal("error", o.OnFailure);
         Assert.Equal(2, o.Concurrency);
+        Assert.Equal(9, o.MaxInFlight);
 
         var bare = PipelineOptions.FromEnvironment(_ => null);
         Assert.Empty(bare.Fetch.AllowedHosts);
@@ -34,7 +36,10 @@ public class PipelineOptionsTests
         Assert.Null(bare.SigningKey);
         Assert.Equal("redirect", bare.OnFailure);
         Assert.Null(bare.Concurrency);
+        Assert.Equal(4, bare.MaxInFlight);
 
         Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_ON_FAILURE" ? "explode" : null));
+        Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_INFLIGHT" ? "0" : null));
+        Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_INFLIGHT" ? "lots" : null));
     }
 }

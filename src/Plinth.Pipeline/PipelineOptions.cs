@@ -10,8 +10,11 @@ public sealed record PipelineOptions(
     RecipeCatalog Recipes,
     string? SigningKey,
     string OnFailure,
-    int? Concurrency)
+    int? Concurrency,
+    int MaxInFlight = 4)
 {
+    public const int DefaultMaxInFlight = 4;
+
     public static PipelineOptions FromEnvironment(Func<string, string?> env)
     {
         var onFailure = env("PLINTH_ON_FAILURE") ?? "redirect";
@@ -26,6 +29,20 @@ public sealed record PipelineOptions(
             recipes,
             string.IsNullOrEmpty(signing) ? null : signing,
             onFailure,
-            concurrency);
+            concurrency,
+            MaxInFlightFrom(env("PLINTH_MAX_INFLIGHT")));
+    }
+
+    /// <summary>
+    /// How many requests may be inside the pipeline at once. Everything beyond that queues
+    /// on the gate rather than being rejected, so a burst costs latency, not errors — and
+    /// memory stays bounded by this number, not by the number of open connections.
+    /// </summary>
+    private static int MaxInFlightFrom(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return DefaultMaxInFlight;
+        if (!int.TryParse(raw, out var n) || n < 1)
+            throw new PlinthException("PLINTH_MAX_INFLIGHT must be an integer of 1 or more");
+        return n;
     }
 }

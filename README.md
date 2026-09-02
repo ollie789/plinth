@@ -79,6 +79,7 @@ that failed to open), `1` on a command-line usage error.
 | `PLINTH_SIGNING_KEY` | secret string | unset (signing off) |
 | `PLINTH_ON_FAILURE` | `redirect` \| `error` | `redirect` |
 | `PLINTH_RECIPES` | path to a JSON map of named recipes | unset (only the built-in `default` recipe) |
+| `PLINTH_MAX_INFLIGHT` | positive integer | `4` (requests beyond it queue on the API's gate) |
 | `PLINTH_CONCURRENCY` | positive integer | processor count (the API and `plinth inspect`; `plinth run` always runs libvips at 1 per `--concurrency` process worker) |
 | `PLINTH_AZURE_STORAGE_CONNECTION` | Azure Storage connection string | unset |
 | `PLINTH_AZURE_STORAGE_ACCOUNT` | `https://<account>.blob.core.windows.net` | unset |
