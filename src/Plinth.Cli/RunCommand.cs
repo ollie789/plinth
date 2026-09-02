@@ -59,7 +59,7 @@ public static class RunCommand
                 }
                 return 0;
             }
-            catch (Exception e) when (e is PlinthException or IOException or UnauthorizedAccessException)
+            catch (Exception e) when (e is not OperationCanceledException)
             {
                 Console.Error.WriteLine($"plinth run: {e.Message}");
                 return 2;
@@ -86,18 +86,53 @@ public static class RunCommand
         if (Directory.Exists(input))
             return Directory.EnumerateFiles(input).Order(StringComparer.Ordinal).Select(f => new Item(f, null, f)).ToList();
         if (!File.Exists(input)) throw new PlinthException($"input not found: {input}");
-        var head = File.ReadAllText(input).TrimStart();
-        if (head.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            return UrlItems(File.ReadAllLines(input));
-        return [new Item(input, null, input)];
+        return LooksLikeUrlList(input) ? UrlItems(File.ReadAllLines(input)) : [new Item(input, null, input)];
     }
 
-    private static List<Item> UrlItems(IEnumerable<string> lines) =>
-        lines.Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#'))
-            .Select(u => new Item(u, u, null))
+    /// <summary>
+    /// A URL list is decided from its first non-blank, non-comment line, sniffed from only the
+    /// first 4 KB as text — enough to see past a leading "# ..." comment without ever decoding a
+    /// whole (possibly large, possibly binary) image file as text just to classify it.
+    /// </summary>
+    private static bool LooksLikeUrlList(string path)
+    {
+        var buffer = new char[4096];
+        int read;
+        using (var reader = new StreamReader(path))
+            read = reader.Read(buffer, 0, buffer.Length);
+        foreach (var line in new string(buffer, 0, read).Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0 || trimmed.StartsWith('#')) continue;
+            return trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        }
+        return false;
+    }
+
+    private static List<Item> UrlItems(IEnumerable<string> lines)
+    {
+        var candidates = lines.Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')).Select(u => new Item(u, u, null));
+
+        // Dedupe by canonical source id, keeping the first occurrence, so the same image
+        // isn't fetched and normalised twice just because it appeared twice in the list. A
+        // URL that fails to parse can't be canonicalised, so it is left alone — it survives
+        // as its own item and surfaces as its own failed record downstream.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var deduped = new List<Item>();
+        foreach (var item in candidates)
+        {
+            string? canonical;
+            try { canonical = SourceId.FromUrl(item.Url!); }
+            catch (PlinthException) { canonical = null; }
+            if (canonical is null || seen.Add(canonical))
+                deduped.Add(item);
+        }
+
+        return deduped
             .OrderBy(i => Uri.TryCreate(i.Url, UriKind.Absolute, out var x) ? x.Host : "", StringComparer.Ordinal)
             .ThenBy(i => i.Url, StringComparer.Ordinal)
             .ToList();
+    }
 
     private static async Task<Dictionary<string, int>> RunAsync(List<Item> items, Recipe recipe, IOutputStore store, ISourceFetcher fetcher,
         int workers, bool refresh, TextWriter manifest, CancellationToken ct)

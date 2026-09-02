@@ -103,5 +103,61 @@ public class CliTests : IDisposable
         Assert.NotEqual(0, await root.Parse(["run"]).InvokeAsync());
     }
 
+    [Fact]
+    public async Task Url_list_starting_with_a_comment_line_is_still_detected_as_a_url_list()
+    {
+        var fetcher = new FakeFetcher()
+            .With("https://cdn.example.com/a.jpg", Synthetic.PackShot(600, 800, White, 100, 100, 200, 300, Black))
+            .With("https://cdn.example.com/b.jpg", Synthetic.PackShot(640, 800, White, 100, 100, 200, 300, Black));
+        var list = Path.Combine(_dir, "commented-urls.txt");
+        File.WriteAllLines(list, ["# a leading comment", "https://cdn.example.com/a.jpg", "https://cdn.example.com/b.jpg"]);
+        Environment.SetEnvironmentVariable("PLINTH_ALLOWED_HOSTS", "cdn.example.com");
+        try
+        {
+            var root = CliApp.Build(_ => fetcher);
+            var result = await Run(root, "run", "--input", list, "--output", _out);
+            Assert.Equal(0, result.Code);
+            Assert.Equal(2, Count(result.Lines, "ok"));
+            Assert.Equal(2, fetcher.Calls);
+        }
+        finally { Environment.SetEnvironmentVariable("PLINTH_ALLOWED_HOSTS", null); }
+    }
+
+    [Fact]
+    public async Task Url_list_with_a_repeated_url_is_deduplicated()
+    {
+        var fetcher = new FakeFetcher()
+            .With("https://cdn.example.com/a.jpg", Synthetic.PackShot(600, 800, White, 100, 100, 200, 300, Black));
+        var list = Path.Combine(_dir, "dup-urls.txt");
+        File.WriteAllLines(list, ["https://cdn.example.com/a.jpg", "https://cdn.example.com/a.jpg"]);
+        Environment.SetEnvironmentVariable("PLINTH_ALLOWED_HOSTS", "cdn.example.com");
+        try
+        {
+            var root = CliApp.Build(_ => fetcher);
+            var result = await Run(root, "run", "--input", list, "--output", _out);
+            Assert.Equal(0, result.Code);
+            Assert.Single(result.Lines);
+            Assert.Equal(1, Count(result.Lines, "ok"));
+            Assert.Equal(1, fetcher.Calls);
+        }
+        finally { Environment.SetEnvironmentVariable("PLINTH_ALLOWED_HOSTS", null); }
+    }
+
+    [Fact]
+    public async Task Key_on_a_missing_path_exits_two_and_prints_a_message_to_stderr()
+    {
+        var root = CliApp.Build();
+        var stderr = new StringWriter();
+        var original = Console.Error;
+        Console.SetError(stderr);
+        try
+        {
+            var code = await root.Parse(["key", Path.Combine(_dir, "nope.jpg")]).InvokeAsync();
+            Assert.Equal(2, code);
+            Assert.Contains("plinth key:", stderr.ToString());
+        }
+        finally { Console.SetError(original); }
+    }
+
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, true); }
 }

@@ -24,30 +24,46 @@ public static class CliApp
         var key = new Command("key", "Print the output key for a source") { pathArg, recipeOpt };
         key.SetAction(async (pr, ct) =>
         {
-            var options = PipelineOptions.FromEnvironment(Environment.GetEnvironmentVariable);
-            var recipe = RunCommand.ResolveRecipe(pr.GetValue(recipeOpt), options.Recipes);
-            var target = pr.GetValue(pathArg)!;
-            var id = target.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
-                ? SourceId.FromUrl(target)
-                : SourceId.FromBytes(await File.ReadAllBytesAsync(target, ct));
-            outWriter.WriteLine(OutputKey.Compute(id, recipe));
-            return 0;
+            try
+            {
+                var options = PipelineOptions.FromEnvironment(Environment.GetEnvironmentVariable);
+                var recipe = RunCommand.ResolveRecipe(pr.GetValue(recipeOpt), options.Recipes);
+                var target = pr.GetValue(pathArg)!;
+                var id = target.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                    ? SourceId.FromUrl(target)
+                    : SourceId.FromBytes(await File.ReadAllBytesAsync(target, ct));
+                outWriter.WriteLine(OutputKey.Compute(id, recipe));
+                return 0;
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"plinth key: {e.Message}");
+                return 2;
+            }
         });
         root.Subcommands.Add(key);
 
         var inspect = new Command("inspect", "Normalise a source and print its result record") { pathArg, recipeOpt };
         inspect.SetAction(async (pr, ct) =>
         {
-            var options = PipelineOptions.FromEnvironment(Environment.GetEnvironmentVariable);
-            Engine.Init(options.Concurrency);
-            var pipeline = new PlinthPipeline(fetchers(options), new Pipeline.Stores.NullStore(), options.Recipes);
-            var recipeName = pr.GetValue(recipeOpt);
-            var target = pr.GetValue(pathArg)!;
-            var result = target.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
-                ? await pipeline.ProcessUrlAsync(target, recipeName, ct)
-                : await pipeline.ProcessBytesAsync(await File.ReadAllBytesAsync(target, ct), recipeName, null, ct);
-            outWriter.WriteLine(result.Record.ToJson());
-            return 0;
+            try
+            {
+                var options = PipelineOptions.FromEnvironment(Environment.GetEnvironmentVariable);
+                Engine.Init(options.Concurrency);
+                var pipeline = new PlinthPipeline(fetchers(options), new Pipeline.Stores.NullStore(), options.Recipes);
+                var recipeName = pr.GetValue(recipeOpt);
+                var target = pr.GetValue(pathArg)!;
+                var result = target.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                    ? await pipeline.ProcessUrlAsync(target, recipeName, ct)
+                    : await pipeline.ProcessBytesAsync(await File.ReadAllBytesAsync(target, ct), recipeName, null, ct);
+                outWriter.WriteLine(result.Record.ToJson());
+                return 0;
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"plinth inspect: {e.Message}");
+                return 2;
+            }
         });
         root.Subcommands.Add(inspect);
 
