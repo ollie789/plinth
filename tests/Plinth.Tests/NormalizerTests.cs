@@ -1,4 +1,5 @@
 using System.Text.Json;
+using NetVips;
 using Plinth.Core;
 
 namespace Plinth.Tests;
@@ -59,6 +60,53 @@ public class NormalizerTests
         Assert.Equal("passthrough", again.Status);
         Assert.Same(first.Output, again.Output);
         Assert.Equal("passthrough", again.Record.Status);
+    }
+
+    [Fact]
+    public void A_source_that_carries_metadata_does_not_pass_through()
+    {
+        var clean = Normalizer.Normalize(Shot(), Recipe.Default).Output!;
+        Assert.Equal("passthrough", Normalizer.Normalize(clean, Recipe.Default).Status);
+
+        foreach (var tagged in new[] { WithIccProfile(clean), WithExif(clean) })
+        {
+            using var check = Image.NewFromBuffer(tagged);
+            Assert.True(check.GetTypeOf("icc-profile-data") != IntPtr.Zero || check.GetTypeOf("exif-data") != IntPtr.Zero);
+            Assert.True(SourceInspector.Inspect(tagged).HasMetadata);
+            var r = Normalizer.Normalize(tagged, Recipe.Default);
+            Assert.Equal("ok", r.Status);
+        }
+    }
+
+    [Fact]
+    public void A_smaller_source_with_the_right_aspect_is_rendered_not_passed_through()
+    {
+        // 400x500 is the canvas aspect exactly, on the recipe ground, with the
+        // content share the recipe wants - but it is not the canvas size.
+        var small = Synthetic.PackShot(400, 500, White, 44, 55, 312, 390, Black, format: "webp");
+        var r = Normalizer.Normalize(small, Recipe.Default);
+        Assert.Equal("ok", r.Status);
+        Assert.Equal((1000, 1250), (r.Record.Output!.Width, r.Record.Output.Height));
+    }
+
+    private static byte[] WithIccProfile(byte[] webp)
+    {
+        using var src = Image.NewFromBuffer(webp);
+        using var probe = Image.Black(1, 1, bands: 3).Copy(interpretation: Enums.Interpretation.Srgb)
+            .IccExport(outputProfile: "srgb");
+        var profile = (byte[])probe.Get("icc-profile-data");
+        using var tagged = src.Mutate(m => m.Set(GValue.BlobType, "icc-profile-data", profile));
+        return tagged.WebpsaveBuffer(q: Recipe.Default.Quality, effort: 4, smartSubsample: false,
+            keep: Enums.ForeignKeep.All);
+    }
+
+    private static byte[] WithExif(byte[] webp)
+    {
+        using var src = Image.NewFromBuffer(webp);
+        using var tagged = src.Mutate(m => m.Set(GValue.RefStrType, "exif-ifd0-Orientation",
+            "1 (Top-left, Short, 1 components, 2 bytes)"));
+        return tagged.WebpsaveBuffer(q: Recipe.Default.Quality, effort: 4, smartSubsample: false,
+            keep: Enums.ForeignKeep.All);
     }
 
     [Fact]

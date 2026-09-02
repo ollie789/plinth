@@ -78,10 +78,20 @@ public static class Normalizer
         }
     }
 
+    /// <summary>
+    /// True only when re-encoding could not change the bytes in any way that matters:
+    /// same format, exactly the canvas size, no alpha, no orientation to apply, no
+    /// metadata to strip, the recipe's ground, and the content already at the
+    /// recipe's share. Anything less and the source is rendered.
+    /// </summary>
     private static bool IsPassthrough(SourceInfo info, Measurement m, Recipe recipe)
     {
-        if (info.Format != recipe.Format || info.Width > recipe.CanvasWidth || info.HasAlpha) return false;
-        var srcAspect = info.Width / (double)info.Height;
+        if (info.Format != recipe.Format || info.Width != recipe.CanvasWidth || info.HasAlpha) return false;
+        // An output carries no orientation tag and no metadata; a source with either
+        // would change on re-encode, so it is not already normalised.
+        if (info.Orientation != 1 || info.HasMetadata) return false;
+        var (w, h) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
+        var srcAspect = w / (double)h;
         var want = recipe.CanvasWidth / (double)recipe.CanvasHeight;
         if (Math.Abs(srcAspect - want) / want > 0.01) return false;
         if (m.Ground.Sampled.Distance(recipe.Background) > recipe.TrimThreshold) return false;

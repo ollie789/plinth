@@ -2,7 +2,9 @@ using NetVips;
 
 namespace Plinth.Core;
 
-public sealed record SourceInfo(string Format, int Width, int Height, bool HasAlpha, int Pages, int Orientation);
+/// <summary><paramref name="HasMetadata"/> is true when the source carries EXIF, XMP, IPTC or an ICC profile.</summary>
+public sealed record SourceInfo(string Format, int Width, int Height, bool HasAlpha, int Pages, int Orientation,
+    bool HasMetadata = false);
 
 /// <summary>Header facts about a source, read without decoding pixels.</summary>
 public static class SourceInspector
@@ -36,9 +38,15 @@ public static class SourceInspector
                 ? ph : img.Height;
             if ((long)width * height > maxPixels)
                 throw new PlinthException($"source too large: {width}x{height} exceeds {maxPixels} pixels");
-            return new SourceInfo(format, width, height, img.HasAlpha(), pages, orientation);
+            return new SourceInfo(format, width, height, img.HasAlpha(), pages, orientation, HasMetadata(img));
         }
     }
+
+    /// <summary>Any of the metadata blocks a normalised output would have stripped.</summary>
+    private static bool HasMetadata(Image img) =>
+        MetadataFields.Any(name => img.GetTypeOf(name) != IntPtr.Zero);
+
+    private static readonly string[] MetadataFields = ["exif-data", "xmp-data", "icc-profile-data", "iptc-data"];
 
     private static string LoaderToFormat(string loader)
     {
