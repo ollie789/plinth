@@ -60,6 +60,10 @@ public sealed class HttpSourceFetcher : ISourceFetcher
             {
                 response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (HttpRequestException e)
             {
                 throw FindPlinthException(e) ?? new PlinthException($"source fetch failed: {e.Message}", e);
@@ -86,18 +90,37 @@ public sealed class HttpSourceFetcher : ISourceFetcher
                 var declared = response.Content.Headers.ContentLength;
                 if (declared > _policy.MaxBytes) throw new PlinthException("source too large");
 
-                var stream = await response.Content.ReadAsStreamAsync(ct);
-                await using (stream)
+                try
                 {
-                    var buffer = new MemoryStream(capacity: (int)Math.Min(declared ?? 256 * 1024, _policy.MaxBytes));
-                    var chunk = new byte[64 * 1024];
-                    int read;
-                    while ((read = await stream.ReadAsync(chunk, ct)) > 0)
+                    var stream = await response.Content.ReadAsStreamAsync(ct);
+                    await using (stream)
                     {
-                        if (buffer.Length + read > _policy.MaxBytes) throw new PlinthException("source too large");
-                        buffer.Write(chunk, 0, read);
+                        var buffer = new MemoryStream(capacity: (int)Math.Min(declared ?? 256 * 1024, _policy.MaxBytes));
+                        var chunk = new byte[64 * 1024];
+                        int read;
+                        while ((read = await stream.ReadAsync(chunk, ct)) > 0)
+                        {
+                            if (buffer.Length + read > _policy.MaxBytes) throw new PlinthException("source too large");
+                            buffer.Write(chunk, 0, read);
+                        }
+                        return new FetchResult(buffer.ToArray(), uri.ToString(), response.Content.Headers.ContentType?.MediaType);
                     }
-                    return new FetchResult(buffer.ToArray(), uri.ToString(), response.Content.Headers.ContentType?.MediaType);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (TaskCanceledException e) when (!ct.IsCancellationRequested)
+                {
+                    throw new PlinthException("source fetch timed out", e);
+                }
+                catch (IOException e)
+                {
+                    throw new PlinthException($"source read failed: {e.Message}", e);
+                }
+                catch (HttpRequestException e)
+                {
+                    throw new PlinthException($"source read failed: {e.Message}", e);
                 }
             }
         }

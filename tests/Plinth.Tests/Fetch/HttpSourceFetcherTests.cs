@@ -100,4 +100,55 @@ public class HttpSourceFetcherTests
         var ex = await Assert.ThrowsAsync<PlinthException>(() => f.FetchAsync("https://localhost/x.jpg"));
         Assert.Contains("blocked address", ex.Message);
     }
+
+    [Fact]
+    public async Task A_stream_that_fails_mid_body_is_a_plinth_failure()
+    {
+        var h = new ScriptedHandler().On("https://cdn.example.com/a.jpg", () =>
+        {
+            var r = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new FlakyStream([1, 2])) };
+            r.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+            return r;
+        });
+        var ex = await Assert.ThrowsAsync<PlinthException>(() => Fetcher(h).FetchAsync("https://cdn.example.com/a.jpg"));
+        Assert.Contains("read failed", ex.Message);
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_surfaces_as_cancellation()
+    {
+        var h = new ScriptedHandler().On("https://cdn.example.com/a.jpg", () => ScriptedHandler.Bytes(Body));
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Fetcher(h).FetchAsync("https://cdn.example.com/a.jpg", cts.Token));
+    }
+
+    /// <summary>Serves a few bytes then throws IOException, as a reset connection would mid-download.</summary>
+    private sealed class FlakyStream(byte[] firstChunk) : Stream
+    {
+        private bool _served;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_served) throw new IOException("connection reset by peer");
+            _served = true;
+            firstChunk.CopyTo(buffer);
+            return ValueTask.FromResult(firstChunk.Length);
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            ReadAsync(buffer.AsMemory(offset, count)).GetAwaiter().GetResult();
+
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 }
