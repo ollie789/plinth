@@ -1,0 +1,8 @@
+bin/
+obj/
+*.user
+.vs/
+.idea/
+.DS_Store
+TestResults/
+docs/bench/latest.json
