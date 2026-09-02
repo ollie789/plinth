@@ -96,15 +96,21 @@ public sealed record Recipe
         }
     }
 
+    /// <summary>
+    /// Throws on any field the pipeline cannot honour, and returns a copy whose
+    /// contentShare is rounded to the four decimals <see cref="Canonical"/> emits,
+    /// so the hash and the content-box arithmetic are computed from the same number.
+    /// </summary>
     public Recipe Validated()
     {
         AspectParts();
+        var share = Math.Round(ContentShare, 4);
         if (Width is < 16 or > 8000) throw new PlinthException("width must be 16..8000");
-        if (ContentShare is <= 0 or > 1) throw new PlinthException("contentShare must be in (0, 1]");
+        if (share is <= 0 or > 1) throw new PlinthException("contentShare must be in (0, 1]");
         if (TrimThreshold is < 0 or > 255) throw new PlinthException("trimThreshold must be 0..255");
         if (Format is not ("webp" or "png")) throw new PlinthException("format must be webp or png");
         if (Quality is < 1 or > 100) throw new PlinthException("quality must be 1..100");
-        return this;
+        return share.Equals(ContentShare) ? this : this with { ContentShare = share };
     }
 
     private (int w, int h) AspectParts()

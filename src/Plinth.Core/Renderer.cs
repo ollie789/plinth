@@ -78,9 +78,14 @@ public static class Renderer
             img.Dispose();
             img = canvas;
 
-            var bytes = recipe.Format == "png"
-                ? img.PngsaveBuffer(compression: 6, keep: Enums.ForeignKeep.None)
-                : img.WebpsaveBuffer(q: recipe.Quality, effort: 4, smartSubsample: false, keep: Enums.ForeignKeep.None);
+            // Explicit: an unknown format must fail loudly rather than fall through
+            // to webp and produce bytes nobody asked for.
+            var bytes = recipe.Format switch
+            {
+                "webp" => img.WebpsaveBuffer(q: recipe.Quality, effort: 4, smartSubsample: false, keep: Enums.ForeignKeep.None),
+                "png" => img.PngsaveBuffer(compression: 6, keep: Enums.ForeignKeep.None),
+                _ => throw new PlinthException($"unsupported output format '{recipe.Format}'"),
+            };
 
             return new Rendered(bytes, new OutputInfo(recipe.CanvasWidth, recipe.CanvasHeight, bytes.Length, recipe.Format), decodeW, decodeH);
         }

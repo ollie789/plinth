@@ -31,6 +31,12 @@ public static class Normalizer
 
         try
         {
+            // Validate at the boundary: a bad recipe becomes a failed record like
+            // any other bad input. Validation rounds contentShare, so the key is
+            // recomputed from the recipe the pipeline will actually use.
+            recipe = recipe.Validated();
+            key = OutputKey.Compute(id, recipe);
+
             var sw = Stopwatch.StartNew();
             var info = SourceInspector.Inspect(source);
             tInspect = sw.ElapsedMilliseconds;

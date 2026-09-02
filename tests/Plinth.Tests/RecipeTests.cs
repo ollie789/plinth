@@ -80,6 +80,15 @@ public class RecipeTests
     }
 
     [Fact]
+    public void Validated_rounds_contentShare_so_the_hash_and_the_box_agree()
+    {
+        var a = (Recipe.Default with { ContentShare = 0.780005 }).Validated();
+        Assert.Equal(0.78, a.ContentShare);
+        Assert.Equal(Recipe.Default.Hash, a.Hash);
+        Assert.Equal(Recipe.Default.ContentBoxWidth, a.ContentBoxWidth);
+    }
+
+    [Fact]
     public void Rgb_parses_hex_and_measures_chebyshev_distance()
     {
         var a = Rgb.Parse("#ffffff");

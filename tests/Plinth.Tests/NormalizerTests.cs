@@ -74,6 +74,35 @@ public class NormalizerTests
     }
 
     [Fact]
+    public void An_unsupported_output_format_fails_instead_of_silently_encoding_webp()
+    {
+        var r = Normalizer.Normalize(Shot(), Recipe.Default with { Format = "jpeg" }, "https://a/b.jpg");
+        Assert.Equal("failed", r.Status);
+        Assert.Null(r.Output);
+        Assert.Contains("format", r.Record.Error);
+    }
+
+    [Fact]
+    public void An_out_of_range_recipe_field_fails_instead_of_throwing()
+    {
+        var r = Normalizer.Normalize(Shot(), Recipe.Default with { Quality = 999 }, "https://a/b.jpg");
+        Assert.Equal("failed", r.Status);
+        Assert.NotNull(r.Record.Error);
+    }
+
+    [Fact]
+    public void A_contentShare_beyond_four_decimals_is_rounded_at_the_boundary()
+    {
+        var bytes = Shot();
+        var a = Normalizer.Normalize(bytes, Recipe.Default with { ContentShare = 0.780005 }, "https://a/b.jpg");
+        var b = Normalizer.Normalize(bytes, Recipe.Default with { ContentShare = 0.78 }, "https://a/b.jpg");
+        Assert.Equal("ok", a.Status);
+        Assert.Equal(b.Record.RecipeHash, a.Record.RecipeHash);
+        Assert.Equal(b.Record.Key, a.Record.Key);
+        Assert.Equal(b.Output!.Length, a.Output!.Length);
+    }
+
+    [Fact]
     public void A_truncated_fixture_never_throws_out_of_normalize()
     {
         var (_, bytes) = Fixtures.All().First();
