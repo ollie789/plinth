@@ -18,13 +18,14 @@ public class RecipeTests
         Assert.Equal("webp", r.Format);
         Assert.Equal(84, r.Quality);
         Assert.True(r.Upscale);
+        Assert.Equal("passthrough", r.Editorial);
     }
 
     [Fact]
     public void Canonical_json_has_sorted_keys_and_no_whitespace()
     {
         Assert.Equal(
-            "{\"aspect\":\"4:5\",\"background\":\"#ffffff\",\"contentShare\":0.78,\"format\":\"webp\",\"quality\":84,\"trimThreshold\":12,\"upscale\":true,\"width\":1000}",
+            "{\"aspect\":\"4:5\",\"background\":\"#ffffff\",\"contentShare\":0.78,\"editorial\":\"passthrough\",\"format\":\"webp\",\"quality\":84,\"trimThreshold\":12,\"upscale\":true,\"width\":1000}",
             Recipe.Default.Canonical());
     }
 
@@ -42,6 +43,7 @@ public class RecipeTests
         var a = Recipe.Default;
         Assert.NotEqual(a.Hash, (a with { Quality = 80 }).Hash);
         Assert.NotEqual(a.Hash, (a with { Background = Rgb.Parse("#fafafa") }).Hash);
+        Assert.NotEqual(a.Hash, (a with { Editorial = "card" }).Hash);
         Assert.Equal(a.Hash, (a with { Quality = 84 }).Hash);
     }
 
@@ -60,13 +62,15 @@ public class RecipeTests
     [Fact]
     public void FromJson_accepts_partial_objects_and_rejects_bad_values()
     {
-        var r = Recipe.FromJson("{\"quality\":70,\"format\":\"png\"}");
+        var r = Recipe.FromJson("{\"quality\":70,\"format\":\"png\",\"editorial\":\"card\"}");
         Assert.Equal(70, r.Quality);
         Assert.Equal("png", r.Format);
         Assert.Equal(1000, r.Width);
+        Assert.Equal("card", r.Editorial);
         Assert.Throws<PlinthException>(() => Recipe.FromJson("{\"aspect\":\"wide\"}"));
         Assert.Throws<PlinthException>(() => Recipe.FromJson("{\"format\":\"gif\"}"));
         Assert.Throws<PlinthException>(() => Recipe.FromJson("{\"contentShare\":1.5}"));
+        Assert.Throws<PlinthException>(() => Recipe.FromJson("{\"editorial\":\"shrink\"}"));
     }
 
     [Fact]
