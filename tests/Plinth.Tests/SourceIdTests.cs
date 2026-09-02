@@ -26,4 +26,24 @@ public class SourceIdTests
         var id = SourceId.FromBytes("hello"u8);
         Assert.Equal("sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", id);
     }
+
+    [Fact]
+    public void Equivalent_spellings_converge_to_the_same_id()
+    {
+        Assert.Equal(
+            SourceId.FromUrl("https://example.com/a~b.jpg?x=_abc"),
+            SourceId.FromUrl("https://example.com/a%7Eb.jpg?x=%5Fabc"));
+
+        Assert.Equal(
+            "https://example.com/b.jpg",
+            SourceId.FromUrl("https://example.com/x/../b.jpg"));
+    }
+
+    [Fact]
+    public void Reserved_escapes_and_path_case_survive()
+    {
+        Assert.Equal(
+            "https://example.com/A/b%2Fc.jpg?q=a%26b&Z=1",
+            SourceId.FromUrl("https://example.com/A/b%2Fc.jpg?q=a%26b&Z=1"));
+    }
 }

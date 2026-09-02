@@ -9,6 +9,17 @@ namespace Plinth.Core;
 /// </summary>
 public static class SourceId
 {
+    /// <summary>
+    /// Returns an RFC 3986 syntax-normalised form of <paramref name="url"/>, computed by
+    /// <see cref="System.Uri"/>. Scheme and host are lowercased, the default port (443) is
+    /// dropped, and the fragment is dropped. As part of the same normalisation, System.Uri
+    /// decodes percent-encoded unreserved characters (e.g. <c>%7E</c> becomes <c>~</c>) and
+    /// removes dot-segments (<c>/x/../b.jpg</c> becomes <c>/b.jpg</c>) — this converges
+    /// equivalent spellings of the same resource onto one id without ever merging different
+    /// resources, since percent-encoded reserved characters (<c>%2F</c>, <c>%3F</c>, <c>%26</c>,
+    /// and so on) are left encoded. Query parameter order and path case are otherwise preserved
+    /// as given.
+    /// </summary>
     public static string FromUrl(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps)
