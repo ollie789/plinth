@@ -1,0 +1,11 @@
+# Golden fixtures
+
+One real pack shot per retailer CDN host the engine handles, pulled from the
+live feed by `tools/fetch-fixtures.mjs`. `sources.txt` records the URLs.
+`golden/` holds the expected result for each (written by the golden tests
+with `PLINTH_UPDATE_GOLDEN=1`).
+
+These images are retailer property used here solely as test inputs for an
+image-processing tool and are not redistributed for any other purpose.
+Re-fetch rather than edit; if a host changes its imagery, refresh the file
+and regenerate its golden record.

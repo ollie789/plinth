@@ -24,4 +24,8 @@
     <ProjectReference Include="..\..\src\Plinth.Core\Plinth.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="../fixtures/**" CopyToOutputDirectory="PreserveNewest" LinkBase="fixtures" />
+  </ItemGroup>
+
 </Project>
