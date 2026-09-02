@@ -15,7 +15,7 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
     {
         Recipe recipe;
         try { recipe = Recipes.Get(recipeName); }
-        catch (PlinthException e) { return Failed(url, url, Recipe.Default, e.Message); }
+        catch (PlinthException e) { return UnknownRecipeResult(url, recipeName, e.Message); }
 
         string sourceId;
         try { sourceId = SourceId.FromUrl(url); }
@@ -34,10 +34,12 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
 
     public async Task<PipelineResult> ProcessBytesAsync(byte[] bytes, string? recipeName, string? sourceId, CancellationToken ct = default)
     {
+        var id = sourceId ?? SourceId.FromBytes(bytes);
+
         Recipe recipe;
         try { recipe = Recipes.Get(recipeName); }
-        catch (PlinthException e) { return Failed(sourceId ?? SourceId.FromBytes(bytes), sourceId ?? SourceId.FromBytes(bytes), Recipe.Default, e.Message); }
-        var id = sourceId ?? SourceId.FromBytes(bytes);
+        catch (PlinthException e) { return UnknownRecipeResult(id, recipeName, e.Message); }
+
         var key = OutputKey.Compute(id, recipe);
         var cached = await store.TryGetAsync(key, ct);
         if (cached is not null) return new PipelineResult(cached.Record.Status, cached.Bytes, cached.Record, FromStore: true);
@@ -54,4 +56,16 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
 
     private static PipelineResult Failed(string sourceId, string keySource, Recipe recipe, string error) =>
         new("failed", null, ResultRecord.Failed(OutputKey.Compute(keySource, recipe), sourceId, recipe, error), false);
+
+    /// <summary>
+    /// An unknown recipe name never had a real recipe to hash, so the key cannot be
+    /// computed with <see cref="Recipe.Hash"/>. Salting with the (unhashed) recipe name
+    /// under a namespace that is not 16 hex characters guarantees this key can never
+    /// collide with a stored artefact's key for the same source.
+    /// </summary>
+    private static PipelineResult UnknownRecipeResult(string sourceId, string? name, string error)
+    {
+        var key = OutputKey.Compute(sourceId, "unknown-recipe:" + name, Engine.Version);
+        return new PipelineResult("failed", null, ResultRecord.Failed(key, sourceId, Recipe.Default, error), false);
+    }
 }

@@ -63,5 +63,11 @@ public class PlinthPipelineTests
         var r = await p.ProcessUrlAsync(Url, "nope");
         Assert.Equal("failed", r.Status);
         Assert.Contains("recipe", r.Record.Error);
+        Assert.NotEqual(OutputKey.Compute(SourceId.FromUrl(Url), Recipe.Default), r.Record.Key);
+
+        var bytes = Shot();
+        var byBytes = await p.ProcessBytesAsync(bytes, "nope", null);
+        Assert.Equal("failed", byBytes.Status);
+        Assert.NotEqual(OutputKey.Compute(SourceId.FromBytes(bytes), Recipe.Default), byBytes.Record.Key);
     }
 }
