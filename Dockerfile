@@ -14,7 +14,6 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
 ENV ASPNETCORE_HTTP_PORTS=8080 \
-    DOTNET_gcServer=1 \
     PLINTH_STORE=none
 EXPOSE 8080
 USER $APP_UID

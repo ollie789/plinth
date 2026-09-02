@@ -66,17 +66,21 @@ Layout:
 
 ```
 plinth/
-  src/Plinth.Core/     pure library: recipe, pipeline, verdict, key, stores
-  src/Plinth.Api/      ASP.NET minimal API wrapping Core
-  src/Plinth.Cli/      System.CommandLine tool wrapping Core
+  src/Plinth.Core/     pure library: recipe, normalise, verdict, key
+  src/Plinth.Pipeline/ fetcher, stores, pipeline orchestration, options
+  src/Plinth.Api/      ASP.NET minimal API wrapping Pipeline
+  src/Plinth.Cli/      System.CommandLine tool wrapping Pipeline
+  src/Plinth.Bench/    fixture benchmark, compares against docs/bench/baseline.json
   tests/Plinth.Tests/  xUnit: golden fixtures, determinism, policy, CLI
   docs/                this spec, diagrams, API and CLI reference
   Dockerfile           one image, entrypoint selects api or cli
   .github/workflows/   build, test, publish image to GHCR on tags
 ```
 
-The Core has no knowledge of HTTP, files or Azure. Everything that touches
-the outside world sits behind two interfaces:
+`ISourceFetcher` and `IOutputStore` — and everything that implements them —
+live in `Plinth.Pipeline`, not `Plinth.Core`: Core stays free of I/O, with no
+knowledge of HTTP, files or Azure. Everything that touches the outside world
+sits behind two interfaces:
 
 - `ISourceFetcher` — bytes for a URL, under the fetch policy (5.1).
 - `IOutputStore` — put and get by key. Implementations: filesystem,
@@ -234,7 +238,11 @@ tune on real seller traffic before anything depends on it.
 
 Any failure in any step yields a record with `status: "failed"` and an
 `error`. The API then **redirects to the original source** (302) by default,
-so a tile with an untrimmed image beats a tile with no image. The CLI records
+so a tile with an untrimmed image beats a tile with no image. That fallback
+only ever applies to a `src` that was already on the allowlist: a `src` that
+is not an absolute `https` URL on the allowlist is rejected with `400
+{"error":"source not allowed"}` before the pipeline runs at all, so a caller
+can never turn the failure path into an open redirector. The CLI records
 the failure in the manifest and continues.
 
 ## 6. Front doors
@@ -243,11 +251,15 @@ the failure in the manifest and continues.
 
 | Route | Purpose |
 |---|---|
-| `GET /v1/image?src=<url>[&recipe=<name>][&sig=<hmac>]` | Normalised image. Headers: `Content-Type`, `Cache-Control: public, max-age=31536000, immutable`, `X-Plinth-Key`, `X-Plinth-Verdict`, `X-Plinth-Confidence`, `X-Plinth-Status`. |
-| `GET /v1/inspect?src=<url>` | The result record as JSON, no image. For tuning and debugging. |
-| `POST /v1/normalize` | Bytes in (multipart or raw body), image out, record in headers. For callers that already hold the bytes. |
+| `GET /v1/image?src=<url>[&recipe=<name>][&sig=<hmac>]` | Normalised image. `400 {"error":"src is required"}` when `src` is missing; `403 {"error":"bad signature"}` when signing is on and `sig` does not verify; `400 {"error":"source not allowed"}` when `src` is not an absolute `https` URL on the allowlist — all three checked before any fetch or processing. Once the pipeline runs, the response (whether the image, a 302 redirect, or the 502 failure body below) always carries `X-Plinth-Key`, `X-Plinth-Status`, `X-Plinth-Cache: hit\|miss`, `X-Plinth-Verdict`, `X-Plinth-Confidence`; a successful image response adds `Content-Type` and `Cache-Control: public, max-age=31536000, immutable`. A failed normalise redirects to the original `src` (302, default) or returns `502` with the record as JSON, per `PLINTH_ON_FAILURE`. |
+| `GET /v1/inspect?src=<url>[&recipe=<name>][&sig=<hmac>]` | The result record as JSON, no image, `200` regardless of the pipeline's status. Same `src`/`sig` validation as `/v1/image`; no `X-Plinth-*` headers. For tuning and debugging. |
+| `POST /v1/normalize?[recipe=<name>]` | Raw image bytes as the request body, image out. `400 {"error":"empty body"}` for an empty body, `413 {"error":"body too large"}` once the body read exceeds the fetch policy's byte cap. Otherwise the response always carries the same `X-Plinth-*` headers as `/v1/image`; a successful normalise also returns the image with `Content-Type`, and a failed one returns `422` with the record as JSON (no redirect fallback — there is no source to redirect to). For callers that already hold the bytes. |
 | `GET /healthz` | Liveness. |
 | `GET /version` | Engine version, libvips version, active recipe names. |
+
+`X-Plinth-Cache` reports whether the response came from the configured store
+(`hit`) or was just processed (`miss`); it is always `miss` when no store is
+configured.
 
 Configuration by environment: `PLINTH_ALLOWED_HOSTS` (comma list),
 `PLINTH_SIGNING_KEY` (optional; when set, `sig` must be a valid HMAC of
@@ -261,20 +273,24 @@ writes to it after, so on-demand and batch share one cache.
 ### 6.2 CLI
 
 ```
-plinth run --input <file|dir|->  --output <dir|azblob://container>
-           [--recipe <name|file>] [--concurrency 4] [--manifest out.jsonl]
-plinth inspect <file|url>
-plinth key <file> [--recipe …]
+plinth run --input <file|dir|->  --output <dir|azblob://container|none>
+           [--recipe <name|file>] [--concurrency 4] [--manifest out.jsonl] [--refresh]
+plinth inspect <file|url> [--recipe …]
+plinth key <file|url> [--recipe …]
 plinth version
+plinth api
 ```
 
 `--input` accepts a directory of images, a file of URLs (one per line, `-`
 for stdin), or a single path. Every item is fetched under the same policy as
 the API, hashed, keyed, and **skipped if the key already exists in the
-output store**. Concurrency defaults to the core count. The manifest is one
-JSON record per line, failures included. Exit code is non-zero only if the
-run itself broke, not if individual images failed; the manifest carries
-those.
+output store** — without fetching it, since the key derives from the URL
+alone (4.2). Concurrency defaults to the core count. `--refresh` refetches
+every source whose key exists and reprocesses only when the sha256 of the
+fetched bytes differs from the stored record's; conditional requests (ETag /
+If-Modified-Since) are a later optimisation. The manifest is one JSON record
+per line, failures included. Exit code is non-zero only if the run itself
+broke, not if individual images failed; the manifest carries those.
 
 This is the mode CF would run inside their scrape, and the reason the
 compute objection does not apply: reruns cost only what is new.
@@ -291,14 +307,30 @@ compute objection does not apply: reruns cost only what is new.
 - `MemoryStore` — tests.
 - `NullStore` — API pass-through when no store is configured.
 
+`PLINTH_STORE` (API) and `--output` (CLI) both take one of three URI forms,
+resolved by the same `StoreUri.Open`:
+
+- `none` — `NullStore`; nothing is remembered.
+- `fs://<path>` — `FileSystemStore` rooted at `<path>` (the CLI also accepts
+  a bare path with no `fs://` prefix as shorthand for this).
+- `azblob://<container>` — `AzureBlobStore` against that container, reading
+  `PLINTH_AZURE_STORAGE_CONNECTION` (a full connection string) if set, else
+  `PLINTH_AZURE_STORAGE_ACCOUNT` (a `https://<account>.blob.core.windows.net`
+  base URL, authenticated via `DefaultAzureCredential`, i.e. managed
+  identity). One of the two must be set or the store fails to open.
+
 Storage is a layer, not a dependency: CF can add S3 or GCS by implementing
 one interface.
 
 ## 8. Deployment
 
 - **Docker**: `mcr.microsoft.com/dotnet/aspnet:10.0` runtime image with
-  `NetVips.Native.linux-x64`. The CLI project references the API project;
-  the entrypoint is `plinth`, and `plinth api` starts the server in-process.
+  `NetVips.Native.linux-x64`. The CLI project references the API project, so
+  one publish carries both; `plinth` (the CLI's `dotnet plinth.dll`) is the
+  image entrypoint and `api` is one of its subcommands — `ENTRYPOINT
+  ["dotnet", "plinth.dll"]` with `CMD ["version"]`, so `docker run <image>`
+  alone prints the engine version and `docker run <image> api` starts the
+  server in-process, reading `PLINTH_*` from the container's environment.
   One image, one tag, two modes.
 - **CI**: GitHub Actions on every push runs build and tests; on a `v*` tag it
   publishes `ghcr.io/ollie789/plinth:<version>` and `:latest`. The image tag is
@@ -339,8 +371,9 @@ Nothing in the feed contract changes.
   (5.1). Nothing a URL parameter invents is ever fetched.
 - Abuse: an optional HMAC on `src` stops the public endpoint being used as
   a free image normaliser; Container Apps ingress rate limits sit in front.
-- Resource: byte cap, pixel cap, timeout, bounded concurrency in the CLI,
-  libvips' own memory limits configured at startup.
+- Resource: byte cap, pixel cap, timeout, bounded concurrency in the CLI —
+  libvips has no hard memory cap of its own, so these are the memory limits,
+  configured at startup (12.3).
 - Supply chain: NetVips and its native package are pinned; the image is
   built from the official Microsoft base; Dependabot on.
 
@@ -389,9 +422,11 @@ regresses by more than 20%.
 
 - **Skip by key without fetching.** The key derives from the URL (4.2), so a
   rerun checks the store and never touches the network for anything seen.
-- **Conditional refetch.** `--refresh` sends `If-None-Match` / `If-Modified-
-  Since` from the stored record; a 304 costs a header round trip, not a
-  download.
+- **Refetch by content hash, not blindly.** `--refresh` still pays for a full
+  download on a hit, but reprocesses only when the fetched bytes' sha256
+  differs from the stored record's; conditional requests (`If-None-Match` /
+  `If-Modified-Since`, a 304 costing a header round trip instead of a
+  download) are a later optimisation (6.2).
 - **Shrink on load.** libvips can decode JPEG at 1/2, 1/4 or 1/8 scale inside
   the decoder for near-zero cost. The measure pass always uses the smallest
   factor that leaves the long side ≥ 512 px. The final pass picks the largest
@@ -418,12 +453,18 @@ regresses by more than 20%.
   curve; 6 costs 2× CPU for ~3% smaller files), `quality` 84,
   `smart_subsample` off. PNG only when a recipe demands it. Both are recipe
   fields so the trade can be re-made per deployment.
-- **libvips configuration.** Concurrency defaults to the container's core
-  count and is overridable (`Engine.Init(n)` or `PLINTH_CONCURRENCY`),
-  operation cache off in batch mode (it only helps repeated
-  operations on the same image), `sequential` access everywhere the
-  pipeline allows it. libvips has no hard memory cap; the pixel cap and the
-  concurrency setting bound memory instead.
+- **libvips configuration.** The API calls `Engine.Init(options.Concurrency)`,
+  which defaults to the container's core count and is overridable via
+  `PLINTH_CONCURRENCY`. The CLI's `plinth run` instead always calls
+  `Engine.Init(1)`: libvips runs single-threaded inside each of the
+  `--concurrency` process workers, because parallelism there already comes
+  from running many images at once, not from many threads per image.
+  Operation cache is off (`NetVips.Cache.Max = 0`; it only helps repeated
+  operations on the same image), `sequential` access everywhere the pipeline
+  allows it. libvips has no hard memory cap of its own; "memory limits
+  configured at startup" (10) means the pixel cap (5.2) that bounds how large
+  a decode can get and the body cap (5.1) that bounds how large a fetch or a
+  `/v1/normalize` upload can get, plus the concurrency setting above.
 - **Two-stage pipeline.** Fetching is I/O-bound and processing is CPU-bound,
   so the CLI runs them as separate bounded stages joined by a channel:
   many fetchers, `cores` processors. Neither waits on the other and CPU
@@ -439,7 +480,8 @@ regresses by more than 20%.
 - **Startup.** Published ReadyToRun and trimmed, on the `runtime-deps` base
   image, with libvips loaded once at start and a warm-up run on an embedded
   fixture so the first real request pays no JIT or library initialisation.
-  Server GC off in the CLI (single tenant, fewer threads), on in the API.
+  The container runs workstation GC for both modes; set `DOTNET_gcServer=1`
+  at deploy time if the API gets more than one vCPU.
 
 ### 12.4 Storage and egress
 
