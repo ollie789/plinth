@@ -8,7 +8,11 @@ public class NormalizerTests
 {
     private static readonly Rgb White = Rgb.Parse("#ffffff");
     private static readonly Rgb Black = Rgb.Parse("#000000");
+    private static readonly Rgb Grey = Rgb.Parse("#808080");
     private static byte[] Shot() => Synthetic.PackShot(800, 1000, White, 200, 300, 300, 400, Black);
+
+    /// <summary>Not a pack shot: a foreign ground with content out to the frame edge.</summary>
+    private static byte[] Scene() => Synthetic.PackShot(800, 1000, Grey, 2, 2, 796, 996, Black);
 
     [Fact]
     public void Ok_result_carries_bytes_and_a_complete_record()
@@ -63,6 +67,25 @@ public class NormalizerTests
         Assert.Equal("passthrough", again.Status);
         Assert.Same(first.Output, again.Output);
         Assert.Equal("passthrough", again.Record.Status);
+        Assert.Equal("already-normalised", again.Record.PassthroughReason);
+    }
+
+    [Fact]
+    public void An_editorial_image_passes_through_untouched_unless_the_recipe_says_card()
+    {
+        var scene = Scene();
+        var r = Normalizer.Normalize(scene, Recipe.Default);
+        Assert.False(r.Record.Verdict.PackShot);
+        Assert.Equal("passthrough", r.Status);
+        Assert.Equal("passthrough", r.Record.Status);
+        Assert.Equal("editorial", r.Record.PassthroughReason);
+        Assert.Equal("jpeg", r.Record.Output!.Format);
+        Assert.Equal(scene.Length, r.Record.Output.Bytes);
+        Assert.Equal(scene, r.Output);
+
+        var carded = Normalizer.Normalize(scene, Recipe.Default with { Editorial = "card" });
+        Assert.Equal("ok", carded.Status);
+        Assert.Null(carded.Record.PassthroughReason);
     }
 
     [Fact]
@@ -174,7 +197,7 @@ public class NormalizerTests
         foreach (var (name, bytes) in Fixtures.All())
         {
             var r = Normalizer.Normalize(bytes[..(bytes.Length * 5 / 100)], Recipe.Default, "https://x/" + name);
-            Assert.True(r.Status is "failed" or "ok", name);
+            Assert.True(r.Status is "failed" or "ok" or "passthrough", name);
             if (r.Status == "failed") Assert.NotNull(r.Record.Error);
         }
     }

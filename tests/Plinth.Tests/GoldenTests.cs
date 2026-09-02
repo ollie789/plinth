@@ -45,7 +45,18 @@ public class GoldenTests
 
         foreach (var (name, bytes) in Fixtures.All())
         {
-            var r = Normalizer.Normalize(bytes, Recipe.Default, "https://fixture/" + name);
+            // Under the default recipe the verdict decides, so a fixture the
+            // scorer calls editorial comes back untouched. The golden still
+            // freezes what the renderer makes of it, so those are re-run with
+            // the card policy.
+            var byPolicy = Normalizer.Normalize(bytes, Recipe.Default, "https://fixture/" + name);
+            if (!byPolicy.Record.Verdict.PackShot)
+            {
+                Assert.Equal("passthrough", byPolicy.Status);
+                Assert.Equal("editorial", byPolicy.Record.PassthroughReason);
+            }
+            var r = byPolicy.Status == "ok" ? byPolicy
+                : Normalizer.Normalize(bytes, Recipe.Default with { Editorial = "card" }, "https://fixture/" + name);
             Assert.Equal("ok", r.Status);
             var actual = new Golden(r.Record.Trim, r.Record.Ground.Sampled, r.Record.Verdict.PackShot,
                 r.Record.Output!, PerceptualHash.ToHex(PerceptualHash.DHash(r.Output!)));

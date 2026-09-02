@@ -27,6 +27,8 @@ public sealed record ResultRecord(
     string RecipeHash,
     string Status,
     string? Error,
+    /// <summary>Why the source was returned untouched: "already-normalised", "editorial", or null.</summary>
+    string? PassthroughReason,
     SourceRecord Source,
     GroundRecord Ground,
     TrimRecord Trim,
@@ -54,6 +56,6 @@ public sealed record ResultRecord(
 
     /// <summary>A record for work that never reached the pixels (fetch failed, bad URL).</summary>
     public static ResultRecord Failed(string key, string sourceId, Recipe recipe, string error) =>
-        new(key, sourceId, Engine.Version, Engine.LibvipsVersion, recipe.Hash, "failed", error,
+        new(key, sourceId, Engine.Version, Engine.LibvipsVersion, recipe.Hash, "failed", error, null,
             EmptySource, EmptyGround, EmptyTrim, EmptyVerdict, null, TimingsRecord.Zero);
 }

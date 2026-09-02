@@ -58,28 +58,31 @@ public static class Normalizer
             var v = VerdictScorer.Score(m, info, recipe);
             verdict = new VerdictRecord(v.PackShot, v.Confidence, v.Reasons);
 
-            if (IsPassthrough(info, m, recipe))
-            {
-                var passRecord = new ResultRecord(key, id, Engine.Version, libvips, recipe.Hash, "passthrough", null,
+            NormalizeResult Passthrough(string reason) => new("passthrough", source,
+                new ResultRecord(key, id, Engine.Version, libvips, recipe.Hash, "passthrough", null, reason,
                     src, ground, trim, verdict,
                     new OutputRecord(info.Width, info.Height, source.Length, info.Format),
-                    new TimingsRecord(tInspect, tMeasure, 0, 0, 0, total.ElapsedMilliseconds));
-                return new NormalizeResult("passthrough", source, passRecord);
-            }
+                    new TimingsRecord(tInspect, tMeasure, 0, 0, 0, total.ElapsedMilliseconds)));
+
+            // The verdict now decides. A scene shrunk onto a white card is worse
+            // than the scene untouched, so unless the recipe asks for a card the
+            // editorial image is handed back exactly as it arrived.
+            if (!v.PackShot && recipe.Editorial == "passthrough") return Passthrough("editorial");
+            if (IsPassthrough(info, m, recipe)) return Passthrough("already-normalised");
 
             sw.Restart();
             var rendered = Renderer.Render(source, info, m, recipe);
             tRender = sw.ElapsedMilliseconds;
 
             var output = new OutputRecord(rendered.Info.Width, rendered.Info.Height, rendered.Info.Bytes, rendered.Info.Format);
-            var record = new ResultRecord(key, id, Engine.Version, libvips, recipe.Hash, "ok", null,
+            var record = new ResultRecord(key, id, Engine.Version, libvips, recipe.Hash, "ok", null, null,
                 src, ground, trim, verdict, output,
                 new TimingsRecord(tInspect, tMeasure, 0, tRender, 0, total.ElapsedMilliseconds));
             return new NormalizeResult("ok", rendered.Bytes, record);
         }
         catch (Exception e) when (e is PlinthException or NetVips.VipsException)
         {
-            var record = new ResultRecord(key, id, Engine.Version, libvips, recipe.Hash, "failed", e.Message,
+            var record = new ResultRecord(key, id, Engine.Version, libvips, recipe.Hash, "failed", e.Message, null,
                 src, ground, trim, verdict, null,
                 new TimingsRecord(tInspect, tMeasure, 0, tRender, 0, total.ElapsedMilliseconds));
             return new NormalizeResult("failed", null, record);
