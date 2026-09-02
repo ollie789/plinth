@@ -36,12 +36,16 @@ public static class Renderer
         {
             throw new PlinthException("could not decode source", e);
         }
-        img = Measurer.MakeOpaqueSrgb(img, recipe.Background);
-        var decodeW = img.Width;
-        var decodeH = img.Height;
 
         try
         {
+            // MakeOpaqueSrgb disposes the image it replaces on success, so img
+            // always refers to the live image here; the finally below disposes
+            // it exactly once whether this call, or anything after it, throws.
+            img = Measurer.MakeOpaqueSrgb(img, recipe.Background);
+            var decodeW = img.Width;
+            var decodeH = img.Height;
+
             if (!m.TrimIsNoop)
             {
                 // Per-axis scale factors: the decode target can be limited by

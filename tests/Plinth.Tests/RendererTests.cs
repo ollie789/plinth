@@ -69,6 +69,27 @@ public class RendererTests
     }
 
     [Fact]
+    public void Renders_through_the_full_chain_at_the_minimum_canvas_width()
+    {
+        // Exercises MakeOpaqueSrgb, crop, fit and gravity all the way through
+        // at the recipe's smallest allowed canvas (16px wide).
+        var r = RenderSynthetic(Recipe.Default with { Format = "png", Width = 16 });
+        Assert.Equal(16, r.Info.Width);
+        Assert.Equal("png", r.Info.Format);
+        Assert.True(r.Bytes.Length > 0);
+    }
+
+    [Fact]
+    public void An_undecodable_source_throws_PlinthException_with_a_decode_message()
+    {
+        var bytes = "not an image"u8.ToArray();
+        var info = new SourceInfo("jpeg", 100, 100, false, 1, 1);
+        var m = new Measurement(new GroundInfo(White, 0, true), new Box(0, 0, 100, 100), true, 1.0, 100, 100);
+        var ex = Assert.Throws<PlinthException>(() => Renderer.Render(bytes, info, m, Recipe.Default));
+        Assert.Contains("could not decode source", ex.Message);
+    }
+
+    [Fact]
     public void Real_fixtures_render_to_the_canvas()
     {
         foreach (var (name, bytes) in Fixtures.All())
