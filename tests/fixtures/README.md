@@ -12,3 +12,7 @@ and regenerate its golden record.
 
 A new fixture needs one run with `PLINTH_UPDATE_GOLDEN=1 dotnet test` to
 create its golden record; a plain run fails on a missing record by design.
+
+`images-asos-media-com` is a real pack shot whose verdict is `packShot:false`
+(light gradient ground); the golden freezes the current, known-wrong label
+because the verdict is report-only.

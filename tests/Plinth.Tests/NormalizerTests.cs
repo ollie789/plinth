@@ -151,16 +151,28 @@ public class NormalizerTests
     }
 
     [Fact]
-    public void A_truncated_fixture_never_throws_out_of_normalize()
+    public void A_truncated_fixture_fails_with_a_record_instead_of_throwing()
     {
-        var (_, bytes) = Fixtures.All().First();
-        var truncated = bytes[..(bytes.Length * 6 / 10)];
+        // libvips happily decodes a baseline JPEG that stops early, filling the
+        // missing scan with grey, so a fixture whose header itself is cut short is
+        // what actually reaches the failure path.
+        var bytes = Fixtures.Read("img1-theiconic-com-au.jpg");
+        var r = Normalizer.Normalize(bytes[..(bytes.Length * 5 / 100)], Recipe.Default, "https://x/t.jpg");
 
-        var r = Normalizer.Normalize(truncated, Recipe.Default, "https://x/t.jpg");
-
+        Assert.Equal("failed", r.Status);
+        Assert.Null(r.Output);
+        Assert.NotNull(r.Record.Error);
         Assert.NotNull(r.Record.Key);
-        Assert.True(r.Status is "failed" or "ok");
-        if (r.Status == "failed")
-            Assert.NotNull(r.Record.Error);
+    }
+
+    [Fact]
+    public void No_truncated_fixture_throws_out_of_normalize()
+    {
+        foreach (var (name, bytes) in Fixtures.All())
+        {
+            var r = Normalizer.Normalize(bytes[..(bytes.Length * 5 / 100)], Recipe.Default, "https://x/" + name);
+            Assert.True(r.Status is "failed" or "ok", name);
+            if (r.Status == "failed") Assert.NotNull(r.Record.Error);
+        }
     }
 }
