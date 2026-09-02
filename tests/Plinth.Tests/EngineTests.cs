@@ -17,4 +17,13 @@ public class EngineTests
         Engine.Init();
         Assert.StartsWith("8.", Engine.LibvipsVersion);
     }
+
+    [Fact]
+    public void Concurrency_is_explicit_and_a_later_default_init_leaves_it_alone()
+    {
+        Engine.Init(1);
+        Assert.Equal(1, Engine.Concurrency);
+        Engine.Init();
+        Assert.Equal(1, Engine.Concurrency);
+    }
 }
