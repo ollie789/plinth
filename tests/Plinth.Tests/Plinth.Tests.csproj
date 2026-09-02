@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Plinth.Core\Plinth.Core.csproj" />
+    <ProjectReference Include="..\..\src\Plinth.Pipeline\Plinth.Pipeline.csproj" />
   </ItemGroup>
 
   <ItemGroup>
