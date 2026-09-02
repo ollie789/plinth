@@ -7,6 +7,7 @@
   <ItemGroup>
     <PackageReference Include="NetVips.Native.osx-arm64" />
     <PackageReference Include="NetVips.Native.linux-x64" />
+    <PackageReference Include="NetVips.Native.linux-arm64" />
   </ItemGroup>
 
 </Project>
