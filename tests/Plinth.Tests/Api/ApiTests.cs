@@ -200,6 +200,71 @@ public class ApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Head_returns_the_image_headers_with_no_body()
+    {
+        var head = await _client.SendAsync(new HttpRequestMessage(HttpMethod.Head, $"/v1/image?src={Uri.EscapeDataString(Url)}"));
+        Assert.Equal(HttpStatusCode.OK, head.StatusCode);
+        Assert.Equal("image/webp", head.Content.Headers.ContentType!.MediaType);
+        Assert.True(head.Content.Headers.ContentLength > 1000);
+        Assert.Empty(await head.Content.ReadAsByteArrayAsync());
+
+        var key = head.Headers.GetValues("X-Plinth-Key").Single();
+        Assert.Equal($"\"{key}\"", head.Headers.ETag!.ToString());
+        Assert.Equal("public, max-age=31536000, immutable", head.Headers.CacheControl!.ToString());
+    }
+
+    [Fact]
+    public async Task A_served_image_carries_its_key_as_a_strong_etag()
+    {
+        var r = await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(Url)}");
+        Assert.Equal($"\"{r.Headers.GetValues("X-Plinth-Key").Single()}\"", r.Headers.ETag!.ToString());
+    }
+
+    [Fact]
+    public async Task Nothing_but_a_servable_image_may_be_cached()
+    {
+        var missing = "https://cdn.example.com/missing.jpg";
+        var redirect = await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(missing)}");
+        Assert.Equal(HttpStatusCode.Found, redirect.StatusCode);
+        Assert.Equal("no-store", redirect.Headers.CacheControl!.ToString());
+
+        Assert.Equal("no-store", (await _client.GetAsync("/v1/image")).Headers.CacheControl!.ToString());
+        Assert.Equal("no-store", (await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString("https://evil.com/a.jpg")}")).Headers.CacheControl!.ToString());
+        Assert.Equal("no-store", (await _client.GetAsync($"/v1/inspect?src={Uri.EscapeDataString(Url)}")).Headers.CacheControl!.ToString());
+
+        var junk = await _client.PostAsync("/v1/normalize", new ByteArrayContent("nope"u8.ToArray()));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, junk.StatusCode);
+        Assert.Equal("no-store", junk.Headers.CacheControl!.ToString());
+
+        await DisposeAsync();
+        await StartAsync(Options(signingKey: "k", onFailure: "error"));
+        var forbidden = await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(Url)}");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        Assert.Equal("no-store", forbidden.Headers.CacheControl!.ToString());
+
+        var badGateway = await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(missing)}&sig={RequestSigning.Sign(missing, "k")}");
+        Assert.Equal(HttpStatusCode.BadGateway, badGateway.StatusCode);
+        Assert.Equal("no-store", badGateway.Headers.CacheControl!.ToString());
+    }
+
+    [Fact]
+    public async Task Healthz_counts_store_hits_misses_and_failures()
+    {
+        await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(Url)}");   // miss
+        await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(Url)}");   // hit
+
+        using var doc = JsonDocument.Parse(await _client.GetStringAsync("/healthz"));
+        Assert.Equal("ok", doc.RootElement.GetProperty("status").GetString());
+        Assert.Equal(1, doc.RootElement.GetProperty("hits").GetInt64());
+        Assert.Equal(1, doc.RootElement.GetProperty("misses").GetInt64());
+        Assert.Equal(0, doc.RootElement.GetProperty("failed").GetInt64());
+
+        await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString("https://cdn.example.com/missing.jpg")}");
+        using var after = JsonDocument.Parse(await _client.GetStringAsync("/healthz"));
+        Assert.Equal(1, after.RootElement.GetProperty("failed").GetInt64());
+    }
+
+    [Fact]
     public async Task Health_and_version()
     {
         Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync("/healthz")).StatusCode);
