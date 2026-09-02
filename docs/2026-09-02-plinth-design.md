@@ -353,13 +353,126 @@ Nothing in the feed contract changes.
 - **API**: contract tests for every route, including the redirect on
   failure and the store round-trip.
 
-## 12. Observability
+## 12. Cost and performance
+
+Cost is a design property here, not a tuning pass at the end. The rule for
+every step: **do not fetch what you can skip, do not decode pixels you will
+not keep, do not encode what has not changed.** Targets are measured on the
+golden fixtures (a typical 1600×2000 JPEG pack shot) and enforced in CI.
+
+### 12.1 Budgets
+
+| Measure | Target | Why it matters |
+|---|---|---|
+| CPU per image, p50 | ≤ 40 ms | Sets the cost of a million images at ~11 CPU-hours |
+| CPU per image, p95 | ≤ 120 ms | Big sources must not dominate a batch |
+| Peak memory per image | ≤ 64 MB | Lets a 1 GiB container run 8 in parallel |
+| Output size | ≤ 80 KB | Storage and egress at scale |
+| Cold start (API) | ≤ 2 s | First tile after scale-up |
+| Rerun over unchanged input | 0 fetches, 0 decodes | The compute argument for CF |
+
+CI runs the fixture benchmark on every pull request and fails if any budget
+regresses by more than 20%.
+
+### 12.2 Do less work
+
+- **Skip by key without fetching.** The key derives from the URL (4.2), so a
+  rerun checks the store and never touches the network for anything seen.
+- **Conditional refetch.** `--refresh` sends `If-None-Match` / `If-Modified-
+  Since` from the stored record; a 304 costs a header round trip, not a
+  download.
+- **Shrink on load.** libvips can decode JPEG at 1/2, 1/4 or 1/8 scale inside
+  the decoder for near-zero cost. The measure pass always uses the smallest
+  factor that leaves the long side ≥ 512 px. The final pass picks the largest
+  factor that still leaves the trimmed content at or above the content box
+  (780 px on a 1000 px canvas), so a 4000 px source is decoded at 1000 px,
+  never at full size. Decode cost scales with pixels; this is the single
+  biggest saving.
+- **Crop before scale.** The trim box is applied on the shrunk decode, and
+  libvips streams the crop and resize as one pipeline with `sequential`
+  access, so the full image is never materialised.
+- **Passthrough.** If the source already matches the recipe within tolerance
+  (aspect within 1%, ground within threshold, content share within 3 points)
+  the bytes are stored as-is with `status: "passthrough"`. No encode.
+- **Early exit on no-op trim.** A box equal to the frame skips the trim step
+  entirely and goes straight to canvas.
+- **Only what will be seen.** LASTLOOK pre-warms only products that are live
+  on a page, not the whole approval queue. CF decides their own filter; the
+  CLI accepts a URL list precisely so the caller can hand it only what
+  matters.
+
+### 12.3 Do it cheaper
+
+- **Encoder settings.** webp `effort` 4 (the default 4 is the knee of the
+  curve; 6 costs 2× CPU for ~3% smaller files), `quality` 84,
+  `smart_subsample` off. PNG only when a recipe demands it. Both are recipe
+  fields so the trade can be re-made per deployment.
+- **libvips configuration.** Concurrency pinned to the container's core
+  count, operation cache off in batch mode (it only helps repeated
+  operations on the same image), `sequential` access everywhere the
+  pipeline allows it. Memory limits set at startup so a pathological source
+  fails fast instead of swapping.
+- **Two-stage pipeline.** Fetching is I/O-bound and processing is CPU-bound,
+  so the CLI runs them as separate bounded stages joined by a channel:
+  many fetchers, `cores` processors. Neither waits on the other and CPU
+  stays saturated without over-subscribing memory.
+- **Connection reuse.** One `HttpClient` per host with HTTP/2 where offered;
+  batch input is sorted by host so connections stay warm. Retries use
+  exponential backoff with a per-host circuit breaker, so a dead CDN does
+  not burn a batch's time budget.
+- **No copies.** Bytes flow from the fetch stream into libvips and from the
+  encoder into the store as streams; the only buffer held is the encoded
+  output. Records are written once, small, and never re-read in the hot
+  path.
+- **Startup.** Published ReadyToRun and trimmed, on the `runtime-deps` base
+  image, with libvips loaded once at start and a warm-up run on an embedded
+  fixture so the first real request pays no JIT or library initialisation.
+  Server GC off in the CLI (single tenant, fewer threads), on in the API.
+
+### 12.4 Storage and egress
+
+- webp outputs are typically 40–60% smaller than the JPEG sources, so
+  serving the normalised copy costs less egress than serving the original.
+- `Cache-Control: immutable` for a year: the CDN fetches from origin once
+  per key; origin egress is a rounding error.
+- Canvas stays at 1000 px wide because the CDN resizes down per width; a
+  larger master buys nothing on a tile.
+- Records are tiny JSON beside the image; no database in the hot path.
+- LASTLOOK Blob lifecycle rule: delete outputs not read for 120 days.
+  Products leave sales; their tiles should not be paid for forever. A
+  deleted key is simply reprocessed on the next request.
+
+### 12.5 Hosting cost, LASTLOOK
+
+At roughly 150k tile views a day and a catalogue in the tens of thousands,
+the container is idle almost all the time: Blob and the CDN serve the reads,
+and the container only sees misses.
+
+| Option | Monthly cost (approx.) | Trade |
+|---|---|---|
+| Container Apps, 0.5 vCPU / 1 GiB, `minReplicas: 1` | tens of dollars | No cold start ever |
+| Same, `minReplicas: 0`, pre-warm at sync | a few dollars | A cold start only on a miss the sync did not cover |
+
+Start with a warm replica for the launch week, read the miss rate from the
+logs, then decide. Blob storage for the whole catalogue is under a gigabyte.
+
+### 12.6 Measurement
+
+- `plinth bench` runs the fixture set and prints per-step p50/p95 CPU,
+  peak memory and output bytes; the same numbers CI enforces.
+- Every record carries step timings (4.4), so a batch manifest aggregates
+  into CPU-seconds per thousand images with one `jq` line. That figure is
+  the number to put in front of CF.
+- The API logs the store hit rate; a falling hit rate is the signal to look
+  at pre-warm coverage before looking at the container size.
+
+## 13. Observability
 
 Structured JSON logs with the key, host, status and step timings. `/healthz`
 for the platform. Timings live in the record, so a batch manifest doubles as
 the performance report. Metrics export is a later addition.
 
-## 13. Decisions taken
+## 14. Decisions taken
 
 - .NET, because the owner maintains it. Containers make the language
   invisible to CF.
@@ -370,7 +483,7 @@ the performance report. Metrics export is a later addition.
 - Verdict reported, not enforced, until tuned on real traffic.
 - No feed changes.
 
-## 14. Open items
+## 15. Open items
 
 - White-on-white products are where trim fails (a shaved sneaker toe). The
   verdict's confidence and `cornerSpread` exist to catch it; the labelled
@@ -379,3 +492,6 @@ the performance report. Metrics export is a later addition.
 - Whether LASTLOOK's warm replica is worth its small monthly cost versus
   relying entirely on pre-warming at sync.
 - Recipe naming for CF: whether they want the LASTLOOK default or their own.
+- The 12.1 budgets are targets set before a line of code exists; the first
+  benchmark run replaces them with measured numbers and CI enforces from
+  there.
