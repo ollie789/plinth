@@ -43,7 +43,7 @@ jobs:
             type=semver,pattern={{version}}
             # A pre-release tag (v1.2.0-rc1) publishes its own tag but must not move :latest.
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           push: true
