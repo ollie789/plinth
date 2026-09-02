@@ -52,6 +52,14 @@ public class MeasurerTests
     }
 
     [Fact]
+    public void Scales_back_a_tall_image_without_drifting_on_the_non_limiting_axis()
+    {
+        var m = Measure(Synthetic.PackShot(300, 3000, White, 100, 2600, 100, 300, Black));
+        Assert.InRange(m.Box.Top, 2594, 2600);
+        Assert.InRange(m.Box.Bottom, 2900, 2912);
+    }
+
+    [Fact]
     public void Box_edge_count_counts_frame_edges_touched()
     {
         Assert.Equal(0, new Box(10, 10, 50, 50).TouchesEdges(100, 100));

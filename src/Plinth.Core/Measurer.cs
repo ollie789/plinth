@@ -4,6 +4,7 @@ namespace Plinth.Core;
 
 public sealed record GroundInfo(Rgb Sampled, int CornerSpread, bool CornersAgree);
 
+/// <summary>Coordinates are in orientation-corrected (display) space, matching what <c>ThumbnailBuffer</c> produces.</summary>
 public readonly record struct Box(int Left, int Top, int Width, int Height)
 {
     public int Right => Left + Width;
@@ -14,6 +15,7 @@ public readonly record struct Box(int Left, int Top, int Width, int Height)
         + (Right >= frameWidth ? 1 : 0) + (Bottom >= frameHeight ? 1 : 0);
 }
 
+/// <summary><see cref="Box"/> is in source pixel coordinates, orientation-corrected (display) space.</summary>
 public sealed record Measurement(
     GroundInfo Ground,
     Box Box,
@@ -40,7 +42,12 @@ public static class Measurer
         var ground = SampleGround(thumb, recipe.TrimThreshold);
 
         var (fullW, fullH) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
-        var scale = thumb.Width / (double)fullW;
+        // Independent per-axis scales: the thumbnail is fit within MeasureSide x MeasureSide,
+        // so whichever axis is the limiting one rounds to an exact ratio while the other axis
+        // carries the rounding error. A single shared scale drifts on that non-limiting axis
+        // (worse for more extreme aspect ratios); per-axis scales don't.
+        var scaleX = thumb.Width / (double)fullW;
+        var scaleY = thumb.Height / (double)fullH;
 
         var raw = thumb.FindTrim(threshold: recipe.TrimThreshold, background: ground.Sampled.ToVips());
         var t = raw.Select(Convert.ToInt32).ToArray();
@@ -53,10 +60,10 @@ public static class Measurer
         }
         else
         {
-            var left = Math.Clamp((int)Math.Floor(t[0] / scale), 0, fullW - 1);
-            var top = Math.Clamp((int)Math.Floor(t[1] / scale), 0, fullH - 1);
-            var right = Math.Clamp((int)Math.Ceiling((t[0] + t[2]) / scale), left + 1, fullW);
-            var bottom = Math.Clamp((int)Math.Ceiling((t[1] + t[3]) / scale), top + 1, fullH);
+            var left = Math.Clamp((int)Math.Floor(t[0] / scaleX), 0, fullW - 1);
+            var top = Math.Clamp((int)Math.Floor(t[1] / scaleY), 0, fullH - 1);
+            var right = Math.Clamp((int)Math.Ceiling((t[0] + t[2]) / scaleX), left + 1, fullW);
+            var bottom = Math.Clamp((int)Math.Ceiling((t[1] + t[3]) / scaleY), top + 1, fullH);
             box = new Box(left, top, right - left, bottom - top);
         }
 
