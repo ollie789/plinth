@@ -19,6 +19,7 @@ APP="plinth"
 CONTAINER="tiles"
 : "${PLINTH_ALLOWED_HOSTS:?set PLINTH_ALLOWED_HOSTS to the comma-separated retailer CDN hosts}"
 SIGNING_KEY="${PLINTH_SIGNING_KEY:-$(openssl rand -hex 32)}"
+mkdir -p "$(dirname "$0")/.state" && umask 077 && printf "%s\n" "$SIGNING_KEY" > "$(dirname "$0")/.state/signing-key"
 
 STATE="$(dirname "$0")/.state"
 mkdir -p "$STATE"
