@@ -108,6 +108,7 @@ The small set of choices that define an output. Defaults are today's engine.
 | `trimThreshold` | `12` | Max distance from the sampled ground for a pixel to count as ground |
 | `format` | `webp` | `webp` or `png` |
 | `quality` | `84` | Encoder quality where the format has one |
+| `editorial` | `passthrough` | What to do with an image the verdict says is not a pack shot: `passthrough` returns the source untouched, `card` trims and cards it anyway |
 
 A recipe serialises to canonical JSON (sorted keys, no whitespace) and hashes
 to `recipeHash` (first 16 hex of SHA-256).
@@ -154,19 +155,26 @@ Emitted for every image, success or failure. Stored beside the output as
 ```json
 {
   "key": "…",
-  "engineVersion": "1.0",
+  "engineVersion": "1.1",
   "libvipsVersion": "8.18.6",
   "recipeHash": "…",
   "source": { "sha256": "…", "bytes": 184233, "width": 1600, "height": 2000, "format": "jpeg", "hadAlpha": false, "orientationApplied": 1 },
-  "ground": { "sampled": "#fefefe", "cornerSpread": 2, "cornersAgree": true },
+  "ground": { "sampled": "#fefefe", "cornerSpread": 2, "cornersAgree": true, "matchesBackground": true },
   "trim": { "left": 310, "top": 120, "width": 980, "height": 1690, "contentShareBefore": 0.61 },
   "verdict": { "packShot": true, "confidence": 0.93, "reasons": [] },
   "output": { "width": 1000, "height": 1250, "bytes": 61240, "format": "webp" },
   "timingsMs": { "inspect": 1, "measure": 6, "decode": 0, "render": 30, "encode": 0, "total": 37 },
   "status": "ok",
-  "error": null
+  "error": null,
+  "passthroughReason": null
 }
 ```
+
+`passthroughReason` is null unless `status` is `passthrough`, where it is
+`already-normalised` (re-encoding could not change the bytes) or `editorial`
+(the verdict said this is not a pack shot and the recipe said passthrough).
+`ground.matchesBackground` says whether the sampled ground is within 40 of the
+recipe background — the same test the verdict and the canvas both use.
 
 `decode` and `encode` are reported as 0 until the pipeline is split into
 separately timed stages; today decoding and encoding both happen inside
@@ -216,21 +224,52 @@ Only the front doors fetch; Core takes bytes.
 
 ### 5.4 Verdict
 
-A heuristic score in `[0, 1]` with reasons, **reported only** in v1:
+A heuristic score in `[0, 1]` with reasons. The verdict **decides**: at 0.5
+and above the image is a pack shot and is carded; below it the recipe's
+`editorial` policy applies, and the default policy hands the source back
+untouched. Shrinking a model on a studio backdrop onto a white card produces a
+grey box floating on white — worse than the original — so an editorial image
+is left alone.
 
-- Corners agree (spread under threshold) and are near the recipe background.
-- The trimmed box touches at most one frame edge.
-- Content share before trim is between 0.05 and 0.98.
-- The box aspect is not extreme (no thin strips).
+The score starts at 1.0 and each failed test subtracts and adds a reason:
 
-Each failed test subtracts and adds a reason string. This is the data we
-tune on real seller traffic before anything depends on it.
+| Test | Penalty |
+|---|---|
+| `ground-not-background` — sampled ground more than 40 from the recipe background | −0.4 |
+| `corners-disagree` — corner spread over `max(24, trimThreshold × 2)` | −0.3 |
+| `touches-edges` — the box touches two or more frame edges | −0.2 |
+| `content-fills-frame` — content share before trim over 0.98 | −0.2 |
+| `content-tiny` — content share before trim under 0.05 | −0.3 |
+| `thin-strip` — box aspect beyond 6:1 either way | −0.2 |
+
+The ground penalty stops short of 0.5 deliberately: a clean pack shot
+photographed on its own grey ground scores 0.6 and keeps a margin over the
+line, so it takes a second failure to make an image editorial.
+
+`touches-edges` and `content-fills-frame` only fire when
+`ground-not-background` did. A tight product crop that runs to the frame edge
+on white is how Amazon and Myer ship a pack shot; it is evidence of a scene
+only when the ground is not the recipe's in the first place. The corner test
+gets slack for studio lighting gradients, which spread the corners a little on
+perfectly good pack shots.
+
+An editorial passthrough returns the retailer's original bytes and format,
+which may be larger than a tile; formats a browser cannot show (tiff, heif) are
+carded instead, whatever the policy says.
+
+The shape comes from a 2,074-image run over the live feed: 591 images were
+flagged, and on inspection every sample was a scene. Their grounds sat 104,
+138 and 147 from white at the quartiles against 0, 5 and 5 for the good ones,
+and their corner spreads 52, 58 and 72 against 0, 0 and 0.
 
 ### 5.5 Canvas and encode
 
 - Scale the trimmed content to fit the content box (`contentShare` of the
   canvas on both axes), enlarging if `upscale` allows.
-- Composite centred on the recipe background at the recipe size.
+- Composite centred at the recipe size on the recipe background — or, for a
+  pack shot whose sampled ground is more than 40 from it, on that sampled
+  ground, so a product photographed on its own grey cards edge to edge with no
+  seam instead of becoming a grey box floated on white.
 - Encode per recipe. Output is unchanged by the caller's viewport; resizing
   is the CDN's job.
 
@@ -552,7 +591,8 @@ is a later addition.
   needed for commercial use.
 - Ingest-first over on-demand-only: it is CF's only viable mode, it makes
   the compute argument true, and it removes cold-start risk from our tiles.
-- Verdict reported, not enforced, until tuned on real traffic.
+- Verdict enforced from engine 1.1, after the first live run showed the
+  flagged images were all scenes; enforcement is a passthrough, never a crop.
 - No feed changes.
 
 ## 15. Open items
@@ -560,6 +600,20 @@ is a later addition.
 - White-on-white products are where trim fails (a shaved sneaker toe). The
   verdict's confidence and `cornerSpread` exist to catch it; the labelled
   sample for tuning is the first job once the core runs.
+- The reshaped verdict was fitted to one live run, so its thresholds (40 from
+  the background, a corner spread of 24) are the next thing to re-measure once
+  the passthrough rate is visible in production. The `images-asos-media-com`
+  fixture is the case it fixed: a real pack shot on a light gradient ground
+  that the old scoring called editorial. Two limits are known and accepted for
+  now, both of them the price of leaning on the ground:
+  - A scene on a near-white backdrop — a model on a bright cyclorama, ground
+    within 40 of white — still cards on white. On these features it is
+    indistinguishable from a tight product crop, which is exactly the case the
+    gating rule was added to protect.
+  - A pack shot on a foreign ground with a strong lighting gradient loses both
+    the ground and the corners (0.3), lands at 0.3 and passes through rather
+    than carding. It is returned untouched, so nothing is damaged; it just
+    misses the canvas.
 - Azure subscription, resource group and the custom domain for the store.
 - Whether LASTLOOK's warm replica is worth its small monthly cost versus
   relying entirely on pre-warming at sync.

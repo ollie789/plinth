@@ -17,6 +17,13 @@ public sealed record Recipe
     public int Quality { get; init; } = 84;
     public bool Upscale { get; init; } = true;
 
+    /// <summary>
+    /// What to do with an image the verdict says is not a pack shot:
+    /// <c>passthrough</c> returns the source untouched, <c>card</c> trims and
+    /// cards it like any other image.
+    /// </summary>
+    public string Editorial { get; init; } = "passthrough";
+
     public static Recipe Default { get; } = new Recipe().Validated();
 
     public int CanvasWidth => Width;
@@ -39,6 +46,7 @@ public sealed record Recipe
         sb.Append("{\"aspect\":\"").Append(Aspect).Append('"');
         sb.Append(",\"background\":\"").Append(Background.ToHex()).Append('"');
         sb.Append(",\"contentShare\":").Append(ContentShare.ToString("0.0###", inv));
+        sb.Append(",\"editorial\":\"").Append(Editorial).Append('"');
         sb.Append(",\"format\":\"").Append(Format).Append('"');
         sb.Append(",\"quality\":").Append(Quality.ToString(inv));
         sb.Append(",\"trimThreshold\":").Append(TrimThreshold.ToString(inv));
@@ -84,6 +92,7 @@ public sealed record Recipe
                         "format" => r with { Format = p.Value.GetString() ?? "" },
                         "quality" => r with { Quality = p.Value.GetInt32() },
                         "upscale" => r with { Upscale = p.Value.GetBoolean() },
+                        "editorial" => r with { Editorial = p.Value.GetString() ?? "" },
                         _ => throw new PlinthException($"unknown recipe field '{p.Name}'"),
                     };
                 }
@@ -110,6 +119,7 @@ public sealed record Recipe
         if (TrimThreshold is < 0 or > 255) throw new PlinthException("trimThreshold must be 0..255");
         if (Format is not ("webp" or "png")) throw new PlinthException("format must be webp or png");
         if (Quality is < 1 or > 100) throw new PlinthException("quality must be 1..100");
+        if (Editorial is not ("passthrough" or "card")) throw new PlinthException("editorial must be passthrough or card");
         return share.Equals(ContentShare) ? this : this with { ContentShare = share };
     }
 

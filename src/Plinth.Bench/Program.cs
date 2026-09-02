@@ -37,6 +37,13 @@ var files = Directory.EnumerateFiles(fixtures).OrderBy(f => f, StringComparer.Or
 if (files.Count == 0) { Console.Error.WriteLine($"no fixtures in {fixtures}"); return 2; }
 
 Engine.Init(concurrency);
+
+// Card every fixture, including the ones the verdict calls editorial. The
+// benchmark exists to measure the cost of the render path and the size of what
+// the encoder produces; under the default policy an editorial image is handed
+// straight back, which measures nothing and reports the source size as an
+// output size.
+var recipe = Recipe.Default with { Editorial = "card" };
 var proc = Process.GetCurrentProcess();
 var results = new List<FixtureResult>();
 
@@ -44,7 +51,7 @@ foreach (var file in files)
 {
     var bytes = File.ReadAllBytes(file);
     var name = Path.GetFileName(file);
-    var warm = Normalizer.Normalize(bytes, Recipe.Default, "https://bench/" + name);
+    var warm = Normalizer.Normalize(bytes, recipe, "https://bench/" + name);
     if (warm.Status == "failed") { Console.Error.WriteLine($"{name}: {warm.Record.Error}"); continue; }
 
     var walls = new List<double>(iterations);
@@ -54,7 +61,7 @@ foreach (var file in files)
     for (var i = 0; i < iterations; i++)
     {
         var sw = Stopwatch.StartNew();
-        var r = Normalizer.Normalize(bytes, Recipe.Default, "https://bench/" + name);
+        var r = Normalizer.Normalize(bytes, recipe, "https://bench/" + name);
         walls.Add(sw.Elapsed.TotalMilliseconds);
         outBytes = r.Output!.Length;
     }
@@ -80,6 +87,8 @@ var summary = new BenchSummary(
     results.Max(r => r.OutputBytes),
     results);
 
+Console.WriteLine($"recipe {recipe.Hash} ({recipe.Canonical()})");
+Console.WriteLine();
 Console.WriteLine($"{"fixture",-40} {"in KB",7} {"out KB",7} {"p50 ms",7} {"p95 ms",7} {"cpu ms",7}");
 foreach (var r in results)
     Console.WriteLine($"{r.Name,-40} {r.InputBytes / 1024,7} {r.OutputBytes / 1024,7} {r.WallP50Ms,7} {r.WallP95Ms,7} {r.CpuMs,7}");

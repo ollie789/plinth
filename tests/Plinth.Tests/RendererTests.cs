@@ -13,7 +13,7 @@ public class RendererTests
         var bytes = Synthetic.PackShot(w, h, White, 200, 300, 300, 400, Black);
         var info = SourceInspector.Inspect(bytes);
         var m = Measurer.Measure(bytes, info, recipe);
-        return Renderer.Render(bytes, info, m, recipe);
+        return Renderer.Render(bytes, info, m, recipe, recipe.Background);
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public class RendererTests
         var bytes = "not an image"u8.ToArray();
         var info = new SourceInfo("jpeg", 100, 100, false, 1, 1);
         var m = new Measurement(new GroundInfo(White, 0, true), new Box(0, 0, 100, 100), true, 1.0, 100, 100);
-        var ex = Assert.Throws<PlinthException>(() => Renderer.Render(bytes, info, m, Recipe.Default));
+        var ex = Assert.Throws<PlinthException>(() => Renderer.Render(bytes, info, m, Recipe.Default, White));
         Assert.Contains("could not decode source", ex.Message);
     }
 
@@ -96,7 +96,7 @@ public class RendererTests
         {
             var info = SourceInspector.Inspect(bytes);
             var m = Measurer.Measure(bytes, info, Recipe.Default);
-            var r = Renderer.Render(bytes, info, m, Recipe.Default);
+            var r = Renderer.Render(bytes, info, m, Recipe.Default, White);
             Assert.Equal((1000, 1250), (r.Info.Width, r.Info.Height));
             Assert.True(r.Bytes.Length < 200_000, $"{name} is {r.Bytes.Length} bytes");
         }

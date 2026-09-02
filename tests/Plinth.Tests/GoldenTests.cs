@@ -45,7 +45,15 @@ public class GoldenTests
 
         foreach (var (name, bytes) in Fixtures.All())
         {
-            var r = Normalizer.Normalize(bytes, Recipe.Default, "https://fixture/" + name);
+            // Under the default recipe the verdict decides, so a fixture the
+            // scorer calls editorial comes back untouched. The golden still
+            // freezes what the renderer makes of it, so those are re-run with
+            // the card policy.
+            var byPolicy = Normalizer.Normalize(bytes, Recipe.Default, "https://fixture/" + name);
+            if (!byPolicy.Record.Verdict.PackShot) Assert.Equal("editorial", byPolicy.Record.PassthroughReason);
+            var r = byPolicy.Record.PassthroughReason == "editorial"
+                ? Normalizer.Normalize(bytes, Recipe.Default with { Editorial = "card" }, "https://fixture/" + name)
+                : byPolicy;
             Assert.Equal("ok", r.Status);
             var actual = new Golden(r.Record.Trim, r.Record.Ground.Sampled, r.Record.Verdict.PackShot,
                 r.Record.Output!, PerceptualHash.ToHex(PerceptualHash.DHash(r.Output!)));
@@ -110,7 +118,7 @@ public class GoldenTests
         Assert.InRange(m.Box.Width, 194, 212);
         Assert.InRange(m.Box.Height, 394, 412);
 
-        var r = Renderer.Render(rotated, info, m, recipe);
+        var r = Renderer.Render(rotated, info, m, recipe, recipe.Background);
         using var img = Image.NewFromBuffer(r.Bytes);
         var t = img.FindTrim(threshold: 12, background: [255, 255, 255]).Select(Convert.ToInt32).ToArray();
         // Same aspect as the rotated box - taller than wide - and centred.

@@ -87,6 +87,37 @@ const sig = hmacSha256Hex(key, src);                       // over the raw src
 const url = `/v1/image?src=${encodeURIComponent(src)}&sig=${sig}`;
 ```
 
+## Recipes
+
+A recipe is the small set of choices that define an output. It serialises to
+canonical JSON (sorted keys, no whitespace) and hashes into every output key,
+so changing any field gives every image a new key rather than a stale tile.
+`--recipe` and `?recipe=` take a name from `PLINTH_RECIPES` or a path to a
+recipe JSON file; a partial object inherits the rest from these defaults.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `aspect` | `4:5` | Output canvas ratio |
+| `width` | `1000` | Canvas width in px; height follows the aspect |
+| `contentShare` | `0.78` | The trimmed product is fitted inside a box this share of the canvas on both axes |
+| `upscale` | `true` | Allow enlarging a small source to reach the content box |
+| `background` | `#ffffff` | Canvas ground, and the flatten colour for transparency |
+| `trimThreshold` | `12` | Max distance from the sampled ground for a pixel to count as ground |
+| `format` | `webp` | `webp` or `png` |
+| `quality` | `84` | Encoder quality where the format has one |
+| `editorial` | `passthrough` | What to do with an image the verdict says is not a pack shot |
+
+The verdict decides what happens: a model on a studio backdrop, a room or a
+rug in a lounge is not a pack shot, and shrinking one onto a white card makes
+a grey box floating on white — so under the default `editorial` policy it
+passes through untouched (`status: "passthrough"`, `passthroughReason:
+"editorial"`) and only `editorial: "card"` trims and cards it anyway. A pack
+shot photographed on its own grey ground cards on that grey, edge to edge.
+
+Editorial passthrough returns the retailer's original bytes and format, which
+may be larger than a tile; formats a browser cannot show (tiff, heif) are
+carded instead.
+
 ## Batch with the CLI
 
 ```
@@ -125,7 +156,7 @@ reached the pixels — `ok`, `passthrough` or `failed` — is written as its ful
 result record, so the manifest doubles as the verdict and timing report:
 
 ```json
-{"key":"86d6dd…","sourceId":"sha256:3f939c…","engineVersion":"1.0","libvipsVersion":"8.18.6","recipeHash":"a1f4459a67b5e0c7","status":"ok","error":null,"source":{"sha256":"3f939c…","bytes":22193,"width":560,"height":700,"format":"jpeg","hadAlpha":false,"orientationApplied":1},"ground":{"sampled":"#e5e5e5","cornerSpread":5,"cornersAgree":true},"trim":{"left":53,"top":355,"width":472,"height":221,"noop":false,"contentShareBefore":0.8429},"verdict":{"packShot":true,"confidence":1,"reasons":[]},"output":{"width":1000,"height":1250,"bytes":15160,"format":"webp"},"timingsMs":{"inspect":15,"measure":56,"decode":0,"render":54,"encode":0,"total":127}}
+{"key":"86d6dd…","sourceId":"sha256:3f939c…","engineVersion":"1.1","libvipsVersion":"8.18.6","recipeHash":"e9f6c8f3f6a3d450","status":"ok","error":null,"passthroughReason":null,"source":{"sha256":"3f939c…","bytes":22193,"width":560,"height":700,"format":"jpeg","hadAlpha":false,"orientationApplied":1},"ground":{"sampled":"#e5e5e5","cornerSpread":5,"cornersAgree":true,"matchesBackground":true},"trim":{"left":53,"top":355,"width":472,"height":221,"noop":false,"contentShareBefore":0.8429},"verdict":{"packShot":true,"confidence":1,"reasons":[]},"output":{"width":1000,"height":1250,"bytes":15160,"format":"webp"},"timingsMs":{"inspect":15,"measure":56,"decode":0,"render":54,"encode":0,"total":127}}
 ```
 
 An item that was never processed — `skipped` (the key was already in the
@@ -198,7 +229,10 @@ dotnet run --project src/Plinth.Cli -- version
 
 `dotnet run -c Release --project src/Plinth.Bench` normalises every fixture
 twenty times (`--iterations N` to change it; CI uses `--iterations 5`) and
-compares against `docs/bench/baseline.json`.
+compares against `docs/bench/baseline.json`. It runs with `editorial: "card"`
+so every fixture goes through the render path, including the ones the verdict
+calls editorial — a passthrough measures nothing and would report the source
+size as an output size.
 
 Only **max output bytes** gates: it is deterministic, so a change there means
 the encoder or the pipeline changed, and the run exits non-zero once it is

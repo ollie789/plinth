@@ -8,7 +8,18 @@ public class NormalizerTests
 {
     private static readonly Rgb White = Rgb.Parse("#ffffff");
     private static readonly Rgb Black = Rgb.Parse("#000000");
+    private static readonly Rgb Grey = Rgb.Parse("#808080");
     private static byte[] Shot() => Synthetic.PackShot(800, 1000, White, 200, 300, 300, 400, Black);
+
+    /// <summary>
+    /// Not a pack shot: content out to the frame edge over a ground that is not
+    /// the recipe's. A 2 px border is under a pixel on the 512 px working copy,
+    /// so the corner patches land mostly on the content and the sampled ground
+    /// comes back near-black — which is what a real scene does too, its corners
+    /// being part of the scene rather than a backdrop.
+    /// </summary>
+    private static byte[] Scene(string format = "jpeg") =>
+        Synthetic.PackShot(800, 1000, Grey, 2, 2, 796, 996, Black, format);
 
     [Fact]
     public void Ok_result_carries_bytes_and_a_complete_record()
@@ -63,6 +74,55 @@ public class NormalizerTests
         Assert.Equal("passthrough", again.Status);
         Assert.Same(first.Output, again.Output);
         Assert.Equal("passthrough", again.Record.Status);
+        Assert.Equal("already-normalised", again.Record.PassthroughReason);
+    }
+
+    [Fact]
+    public void An_editorial_image_passes_through_untouched_unless_the_recipe_says_card()
+    {
+        var scene = Scene();
+        var r = Normalizer.Normalize(scene, Recipe.Default);
+        Assert.False(r.Record.Verdict.PackShot);
+        Assert.Equal(["ground-not-background", "touches-edges", "content-fills-frame"], r.Record.Verdict.Reasons);
+        Assert.False(r.Record.Ground.MatchesBackground);
+        Assert.Equal("#222222", r.Record.Ground.Sampled);
+        Assert.Equal("passthrough", r.Status);
+        Assert.Equal("passthrough", r.Record.Status);
+        Assert.Equal("editorial", r.Record.PassthroughReason);
+        Assert.Equal("jpeg", r.Record.Output!.Format);
+        Assert.Equal(scene.Length, r.Record.Output.Bytes);
+        Assert.Equal(scene, r.Output);
+
+        var carded = Normalizer.Normalize(scene, Recipe.Default with { Editorial = "card" });
+        Assert.Equal("ok", carded.Status);
+        Assert.Null(carded.Record.PassthroughReason);
+    }
+
+    [Fact]
+    public void An_editorial_image_a_browser_cannot_show_is_carded_rather_than_passed_through()
+    {
+        // Passthrough hands back the source's own bytes and format, so it is
+        // only ever an option for a format the page could render.
+        var r = Normalizer.Normalize(Scene("tiff"), Recipe.Default);
+        Assert.Equal("tiff", r.Record.Source.Format);
+        Assert.False(r.Record.Verdict.PackShot);
+        Assert.Equal("ok", r.Status);
+        Assert.Null(r.Record.PassthroughReason);
+        Assert.Equal("webp", r.Record.Output!.Format);
+    }
+
+    [Fact]
+    public void A_pack_shot_on_a_grey_ground_is_carded_on_that_grey_not_on_white()
+    {
+        var r = Normalizer.Normalize(Synthetic.PackShot(800, 1000, Grey, 250, 300, 300, 400, Black), Recipe.Default);
+        Assert.True(r.Record.Verdict.PackShot);
+        Assert.Equal("ok", r.Status);
+        Assert.False(r.Record.Ground.MatchesBackground);
+
+        using var img = Image.NewFromBuffer(r.Output!);
+        var corner = img.Getpoint(2, 2);
+        for (var band = 0; band < 3; band++)
+            Assert.InRange(corner[band], 0x80 - 3, 0x80 + 3);
     }
 
     [Fact]
@@ -174,7 +234,7 @@ public class NormalizerTests
         foreach (var (name, bytes) in Fixtures.All())
         {
             var r = Normalizer.Normalize(bytes[..(bytes.Length * 5 / 100)], Recipe.Default, "https://x/" + name);
-            Assert.True(r.Status is "failed" or "ok", name);
+            Assert.True(r.Status is "failed" or "ok" or "passthrough", name);
             if (r.Status == "failed") Assert.NotNull(r.Record.Error);
         }
     }

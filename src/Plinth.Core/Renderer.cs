@@ -20,7 +20,14 @@ public static class Renderer
         return ((int)Math.Ceiling(w * s) + 1, (int)Math.Ceiling(h * s) + 1);
     }
 
-    public static Rendered Render(byte[] source, SourceInfo info, Measurement m, Recipe recipe)
+    /// <summary>
+    /// <paramref name="canvasBackground"/> is the colour the card is made of:
+    /// it flattens any transparency and fills the canvas around the content.
+    /// The caller chooses it, because a pack shot photographed on its own grey
+    /// ground has to card on that grey — edge to edge, with no seam — while
+    /// everything shot on the recipe's ground cards on the recipe background.
+    /// </summary>
+    public static Rendered Render(byte[] source, SourceInfo info, Measurement m, Recipe recipe, Rgb canvasBackground)
     {
         Engine.Init();
         var (fullW, fullH) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
@@ -45,7 +52,7 @@ public static class Renderer
             // img may name an already-disposed image and the intermediate is left
             // to the finaliser; NetVips images are SafeHandles, so the redundant
             // Dispose in the finally is harmless.
-            img = Measurer.MakeOpaqueSrgb(img, recipe.Background);
+            img = Measurer.MakeOpaqueSrgb(img, canvasBackground);
             var decodeW = img.Width;
             var decodeH = img.Height;
 
@@ -77,7 +84,7 @@ public static class Renderer
             }
 
             var canvas = img.Gravity(Enums.CompassDirection.Centre, recipe.CanvasWidth, recipe.CanvasHeight,
-                extend: Enums.Extend.Background, background: recipe.Background.ToVips());
+                extend: Enums.Extend.Background, background: canvasBackground.ToVips());
             img.Dispose();
             img = canvas;
 
