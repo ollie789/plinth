@@ -8,6 +8,7 @@ var fixtures = Opt("--fixtures", Path.Combine("tests", "fixtures", "src"));
 var iterations = int.Parse(Opt("--iterations", "20"));
 var baselinePath = Opt("--baseline", Path.Combine("docs", "bench", "baseline.json"));
 var writeBaseline = args_.Contains("--write-baseline");
+if (iterations < 1) { Console.Error.WriteLine("--iterations must be at least 1"); return 2; }
 
 var json = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
 var files = Directory.EnumerateFiles(fixtures).OrderBy(f => f, StringComparer.Ordinal).ToList();
@@ -38,9 +39,12 @@ foreach (var file in files)
     proc.Refresh();
     var cpuPerImage = (proc.TotalProcessorTime - cpu0).TotalMilliseconds / iterations;
     walls.Sort();
+    var p95Index = Math.Clamp((int)Math.Ceiling(walls.Count * 0.95) - 1, 0, walls.Count - 1);
     results.Add(new FixtureResult(name, bytes.Length, outBytes,
-        Math.Round(walls[walls.Count / 2], 1), Math.Round(walls[(int)(walls.Count * 0.95) - 1], 1), Math.Round(cpuPerImage, 1)));
+        Math.Round(walls[walls.Count / 2], 1), Math.Round(walls[p95Index], 1), Math.Round(cpuPerImage, 1)));
 }
+
+if (results.Count == 0) { Console.Error.WriteLine("no fixture normalised successfully; nothing to benchmark"); return 2; }
 
 proc.Refresh();
 var summary = new BenchSummary(
