@@ -14,6 +14,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="NetVips.Native.osx-arm64" />
     <PackageReference Include="NetVips.Native.linux-x64" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Plinth.Core\Plinth.Core.csproj" />
     <ProjectReference Include="..\..\src\Plinth.Pipeline\Plinth.Pipeline.csproj" />
+    <ProjectReference Include="..\..\src\Plinth.Api\Plinth.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
