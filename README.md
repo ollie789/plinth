@@ -16,32 +16,87 @@ already exists.
 docker run --rm -p 8080:8080 \
   -e PLINTH_ALLOWED_HOSTS=images.example.com,cdn.example.com \
   -e PLINTH_STORE=none \
-  plinth:dev api
+  ghcr.io/ollie789/plinth:latest api
 ```
+
+To run the working tree instead of the published image, build it first and
+swap the image name for `plinth:dev`:
+
+```
+docker build -t plinth:dev .
+```
+
+The container runs as uid **1654** (`$APP_UID` on the .NET base image), so an
+`fs://` store on a mounted volume has to be writable by that uid — otherwise
+every put fails and nothing is ever cached. Either `chown 1654` the host
+directory or run with `--user` set to an id that owns it.
 
 `PLINTH_ALLOWED_HOSTS` is the security model: it's a comma list of exact
 hostnames, `https` only, and an empty (or unset) list refuses every fetch —
 there is no "allow all". `PLINTH_STORE` is `none` (pass-through, the
-default), `fs://<path>`, or `azblob://<container>`. Add
-`-e PLINTH_SIGNING_KEY=<secret>` to require every request's `sig` to be a
-valid HMAC of `src`, which stops the public endpoint being used as a free
-image normaliser.
+default), `fs://<path>`, or `azblob://<container>`.
 
 | Route | Purpose |
 |---|---|
-| `GET /v1/image?src=<url>[&recipe=<name>][&sig=<hmac>]` | Normalised image. `400` if `src` is missing or not on the allowlist, `403` on a bad signature; a failed normalise redirects to `src` (302, default) or returns `502` with the result record as JSON, per `PLINTH_ON_FAILURE`. |
-| `GET /v1/inspect?src=<url>[&recipe=<name>][&sig=<hmac>]` | The result record as JSON, no image — for tuning and debugging. |
-| `POST /v1/normalize?[recipe=<name>]` | Raw image bytes as the body, image out. `400` on an empty body, `413` once the body exceeds the 12 MB cap, `422` with the record as JSON if normalising fails. |
-| `GET /healthz` | Liveness. |
+| `GET /v1/image?src=<url>[&recipe=<name>][&sig=<hmac>]` | The normalised image. `400` if `src` is missing or not on the allowlist, `403` on a bad signature; a failed normalise redirects to `src` (302, default) or returns `502` with the result record as JSON, per `PLINTH_ON_FAILURE`. |
+| `HEAD /v1/image?…` | The same work and the same headers as `GET`, with no body — for a CDN or a prober asking whether a key is servable. |
+| `GET /v1/inspect?src=<url>[&recipe=<name>][&sig=<hmac>]` | The result record as JSON, no image — for tuning and debugging. Validated and rate-gated exactly like `/v1/image`, and it counts against `PLINTH_MAX_INFLIGHT` like any other pipeline call; on a store hit it reads the record alone and never moves the image bytes. |
+| `POST /v1/normalize?[recipe=<name>]` | Raw image bytes as the body, image out. `400` on an empty body, `413` once the body exceeds the 12 MB cap, `403` if signing is on and `X-Plinth-Signature` does not verify, `422` with the record as JSON if normalising fails. |
+| `GET /healthz` | Liveness, plus the process counters: `{"status":"ok","hits":n,"misses":n,"failed":n}` — store hits, results processed, and results that failed, since start. |
 | `GET /version` | Engine version, libvips version, active recipe names. |
 
 Successful and failed image responses alike carry `X-Plinth-Key`,
 `X-Plinth-Status`, `X-Plinth-Cache: hit|miss` (whether the result came from
-the configured store), `X-Plinth-Verdict` and `X-Plinth-Confidence`; a
-served image also gets `Content-Type` and
-`Cache-Control: public, max-age=31536000, immutable`.
+the configured store), `X-Plinth-Verdict` and `X-Plinth-Confidence`. A served
+image also gets `Content-Type`, `ETag` (the output key in quotes — the key
+already identifies the exact bytes) and
+`Cache-Control: public, max-age=31536000, immutable`. Everything else — the
+302, the 502, the 422, and every 400 and 403 — carries
+`Cache-Control: no-store`, so a failure is never cached anywhere.
+
+`PLINTH_MAX_INFLIGHT` (default 4) bounds how many requests are inside the
+pipeline at once. Beyond it requests **queue**, they are not rejected: a
+burst costs latency, and peak memory stays a function of that number rather
+than of how many connections happen to be open.
+
+Each pipeline call writes one JSON log line on stdout under the category
+`Plinth.Api`, with `Route`, `Host` (the source host only — never the URL,
+never the signature), `Key`, `Status`, `Cache` and `Ms`.
+
+### Signing
+
+Set `PLINTH_SIGNING_KEY=<secret>` and every `src` route requires a valid
+`sig`. This is what stops a public endpoint being used as a free image
+normaliser, and it is effectively mandatory for any deployment reachable from
+the internet: without it, anyone can vary the query string forever, and each
+variant is a fresh cache miss that costs a fetch and a full normalise. The
+allowlist alone does not close that — the cache-busting happens before the
+host is ever looked at.
+
+- `sig` is the lowercase hex **HMAC-SHA256** of the exact decoded `src`
+  string, with the key taken as UTF-8 bytes. Sign the URL as you mean it,
+  then percent-encode it for the query string: `encodeURIComponent(src)`.
+- `POST /v1/normalize` has no `src` to sign, so it takes the header
+  `X-Plinth-Signature`: the same HMAC, over the **lowercase hex sha256 of the
+  request body**.
+- Signed URLs do not expire. Rotating `PLINTH_SIGNING_KEY` is the only way to
+  revoke one, and it revokes all of them at once.
+
+```js
+const sig = hmacSha256Hex(key, src);                       // over the raw src
+const url = `/v1/image?src=${encodeURIComponent(src)}&sig=${sig}`;
+```
 
 ## Batch with the CLI
+
+```
+plinth run --input <file|dir|-> --output <dir|fs://path|azblob://container|none>
+           [--recipe <name|file>] [--concurrency 8] [--manifest out.jsonl] [--refresh]
+plinth inspect <file|url> [--recipe <name|file>]     # normalise and print the record
+plinth key <file|url> [--recipe <name|file>]         # print the output key, nothing else
+plinth version                                       # engine and libvips versions
+plinth api                                           # host the HTTP API
+```
 
 ```
 plinth run --input tests/fixtures/src --output /tmp/out --manifest /tmp/out/manifest.jsonl
@@ -49,26 +104,42 @@ plinth run --input urls.txt --output azblob://tiles --concurrency 8
 plinth run --input urls.txt --output /tmp/out --refresh
 ```
 
-`--input` is a directory of images, a file of URLs (one per line, `-` for
-stdin), or a single path. `--output` is a directory (or a bare/`fs://` path),
-`azblob://<container>`, or `none`. Every item is keyed from its URL or
-content hash alone and **skipped without fetching** if that key already
-exists in the store. `--refresh` refetches URL sources whose key exists and
-reprocesses only when the sha256 of the freshly fetched bytes differs from
-the stored record's (status `unchanged` otherwise); local file paths under
-`--refresh` are always reprocessed, since there's nothing to refetch.
+`--input` is a directory of images, a file of URLs (one per line, `#`
+comments allowed, `-` for stdin), or a single path. `--output` is a directory
+(or a bare/`fs://` path), `azblob://<container>`, or `none`. Every item is
+keyed from its URL or content hash alone and **skipped without fetching** if
+that key already exists in the store.
+
+`--refresh` is the only way to invalidate anything: outputs are content-keyed
+and served `immutable` for a year, so a CDN will not come back and ask again.
+It refetches URL sources whose key exists and reprocesses only when the
+sha256 of the freshly fetched bytes differs from the stored record's (status
+`unchanged` otherwise); local file paths under `--refresh` are always
+reprocessed, since there's nothing to refetch. A source that changed at the
+same URL gets a new key, so the old tile is not overwritten — it is simply no
+longer referenced.
 
 The manifest is one JSON line per item, written to `--manifest <path>` or
-stdout:
+stdout, and **every input item produces exactly one line**. An item that
+reached the pixels — `ok`, `passthrough` or `failed` — is written as its full
+result record, so the manifest doubles as the verdict and timing report:
 
 ```json
-{"key":"ba301d87ff8bf5244ee6e618b3527772711410331556e78aa412e606cb8945ec","sourceId":"sha256:5e696310fd9e8d44ed94b37af3eefb77987efea300f3860ee3866804d163fb40","status":"ok","error":null,"outputBytes":55898}
+{"key":"86d6dd…","sourceId":"sha256:3f939c…","engineVersion":"1.0","libvipsVersion":"8.18.6","recipeHash":"a1f4459a67b5e0c7","status":"ok","error":null,"source":{"sha256":"3f939c…","bytes":22193,"width":560,"height":700,"format":"jpeg","hadAlpha":false,"orientationApplied":1},"ground":{"sampled":"#e5e5e5","cornerSpread":5,"cornersAgree":true},"trim":{"left":53,"top":355,"width":472,"height":221,"noop":false,"contentShareBefore":0.8429},"verdict":{"packShot":true,"confidence":1,"reasons":[]},"output":{"width":1000,"height":1250,"bytes":15160,"format":"webp"},"timingsMs":{"inspect":15,"measure":56,"decode":0,"render":54,"encode":0,"total":127}}
 ```
 
-`status` is `ok`, `passthrough`, `failed`, `skipped` or `unchanged`. Exit
-code is `0` on a normal run (individual item failures live in the manifest,
-not the exit code), `2` if the run itself broke (bad input path, a store
-that failed to open), `1` on a command-line usage error.
+An item that was never processed — `skipped` (the key was already in the
+store) or `unchanged` (`--refresh` found identical bytes) — has no record to
+write, so it gets the three fields that identify it:
+
+```json
+{"key":"73829b…","sourceId":"sha256:03f167…","status":"skipped"}
+```
+
+Exit code is `0` on a normal run — an unreadable file, a dead host or a store
+that rejects one put is that item's `failed` line, not the run's exit code —
+`2` if the run itself broke (input path not found, a store URI that would not
+open, a recipe that would not resolve), and `1` on a command-line usage error.
 
 ## Environment variables
 
@@ -78,11 +149,15 @@ that failed to open), `1` on a command-line usage error.
 | `PLINTH_STORE` | `none` \| `fs://<path>` \| `azblob://<container>` | `none` |
 | `PLINTH_SIGNING_KEY` | secret string | unset (signing off) |
 | `PLINTH_ON_FAILURE` | `redirect` \| `error` | `redirect` |
-| `PLINTH_RECIPES` | path to a JSON map of named recipes | unset (only the built-in `default` recipe) |
 | `PLINTH_MAX_INFLIGHT` | positive integer | `4` (requests beyond it queue on the API's gate) |
+| `PLINTH_RECIPES` | path to a JSON map of named recipes | unset (only the built-in `default` recipe) |
 | `PLINTH_CONCURRENCY` | positive integer | processor count (the API and `plinth inspect`; `plinth run` always runs libvips at 1 per `--concurrency` process worker) |
 | `PLINTH_AZURE_STORAGE_CONNECTION` | Azure Storage connection string | unset |
 | `PLINTH_AZURE_STORAGE_ACCOUNT` | `https://<account>.blob.core.windows.net` | unset |
+
+A relative `PLINTH_RECIPES` path resolves against the working directory,
+which is `/app` inside the container — mount the file there, or give an
+absolute path.
 
 `PLINTH_AZURE_STORAGE_CONNECTION` and `PLINTH_AZURE_STORAGE_ACCOUNT` are only
 read when the store is `azblob://…`: the connection string wins if both are
@@ -105,6 +180,11 @@ first two hex characters of the key:
 <root>/<key[0..2]>/<key>.json    the result record
 ```
 
+The filesystem store writes each file under a unique `.tmp` name and renames
+it into place, so a reader never sees a half-written file. A crash mid-write
+can leave a `<key>.<ext>.<hex>.tmp` behind; nothing ever reads those, and
+they are safe to delete at any time.
+
 ## Build from source
 
 Requires the .NET 10 SDK.
@@ -117,11 +197,18 @@ dotnet run --project src/Plinth.Cli -- version
 ## Benchmark
 
 `dotnet run -c Release --project src/Plinth.Bench` normalises every fixture
-twenty times and compares against `docs/bench/baseline.json`; it exits
-non-zero on a regression over 20%. `--write-baseline` resets the baseline
-after an intentional change.
+twenty times (`--iterations N` to change it; CI uses `--iterations 5`) and
+compares against `docs/bench/baseline.json`.
+
+Only **max output bytes** gates: it is deterministic, so a change there means
+the encoder or the pipeline changed, and the run exits non-zero once it is
+more than 20% over the baseline. Mean CPU per image and max wall p95 are
+reported but never fail a build on their own, because they move with whatever
+else the machine is doing — pass `--strict` to gate on those too.
+`--write-baseline` resets the baseline after an intentional change.
 
 ## Design
 
-Design: `docs/2026-09-02-plinth-design.md`. Build plans:
-`docs/plans/2026-09-02-plinth-core.md`, `docs/plans/2026-09-02-plinth-runtime.md`.
+The full design lives in `docs/2026-09-02-plinth-design.md`; the build plans
+that produced this code are `docs/plans/2026-09-02-plinth-core.md` and
+`docs/plans/2026-09-02-plinth-runtime.md`.
