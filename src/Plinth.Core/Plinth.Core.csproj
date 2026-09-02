@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Plinth.Core</RootNamespace>
+    <AssemblyName>Plinth.Core</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NetVips" />
+  </ItemGroup>
+</Project>

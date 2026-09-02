@@ -21,7 +21,7 @@
 - Caps: `MaxPixels = 30_000_000`. (Byte caps and timeouts belong to the fetchers in the next plan; Core takes bytes.)
 - Core must be pure: no network, no clock in outputs (timings are measured but never affect bytes or keys), no randomness, no file I/O except in tests and the bench.
 - Every task ends with all tests green (`dotnet test`) and a commit. Commit messages are one line, present tense, no prefixes.
-- Git identity for commits: `Oliver Bingemann <ollie.bingemann@gmail.com>`; add the trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
+- Git identity for commits: `Oliver Bingemann <ollie.bingemann@gmail.com>`.
 
 ---
 

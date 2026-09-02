@@ -125,7 +125,11 @@ different URLs can be deduplicated later by a content-hash index.
 
 `engineVersion` is the **algorithm** version, bumped only when output would
 change, not on every package release. Bumping it invalidates every cached
-output on purpose; that is the cost of never serving a stale tile.
+output on purpose; that is the cost of never serving a stale tile. It is a
+constant in Core (`Engine.Version`); bump it whenever the pinned libvips
+changes or the algorithm changes. The record also carries `libvipsVersion`,
+which is not part of the key, so a mismatch between the libvips that produced
+an output and the one running now is detectable.
 
 The key is the filename in every store and the cache identity in every URL.
 
@@ -146,18 +150,23 @@ Emitted for every image, success or failure. Stored beside the output as
 ```json
 {
   "key": "…",
-  "engineVersion": "1.0.0",
+  "engineVersion": "1.0",
+  "libvipsVersion": "8.18.6",
   "recipeHash": "…",
   "source": { "sha256": "…", "bytes": 184233, "width": 1600, "height": 2000, "format": "jpeg", "hadAlpha": false, "orientationApplied": 1 },
   "ground": { "sampled": "#fefefe", "cornerSpread": 2, "cornersAgree": true },
   "trim": { "left": 310, "top": 120, "width": 980, "height": 1690, "contentShareBefore": 0.61 },
   "verdict": { "packShot": true, "confidence": 0.93, "reasons": [] },
   "output": { "width": 1000, "height": 1250, "bytes": 61240, "format": "webp" },
-  "timingsMs": { "decode": 18, "measure": 6, "trim": 4, "canvas": 11, "encode": 22 },
+  "timingsMs": { "inspect": 1, "measure": 6, "decode": 0, "render": 30, "encode": 0, "total": 37 },
   "status": "ok",
   "error": null
 }
 ```
+
+`decode` and `encode` are reported as 0 until the pipeline is split into
+separately timed stages; today decoding and encoding both happen inside
+`render`, which is timed as one step.
 
 Future operations (colour extraction, dedupe by perceptual hash, background
 removal) extend this record; they do not change the function signature.
@@ -292,8 +301,9 @@ one interface.
   the entrypoint is `plinth`, and `plinth api` starts the server in-process.
   One image, one tag, two modes.
 - **CI**: GitHub Actions on every push runs build and tests; on a `v*` tag it
-  publishes `ghcr.io/ollie789/plinth:<version>` and `:latest`. Engine version
-  comes from the tag and is stamped into the assembly.
+  publishes `ghcr.io/ollie789/plinth:<version>` and `:latest`. The image tag is
+  the package version; `Engine.Version` is the algorithm version and is
+  independent of it.
 - **LASTLOOK hosting**: Azure Container Apps, 0.5 vCPU / 1 GiB, ingress
   public, `minReplicas: 1` in production so the first tile of the day does
   not wait for a cold start (a scale-to-zero container plus libvips takes
@@ -337,9 +347,10 @@ Nothing in the feed contract changes.
 ## 11. Testing
 
 - **Golden fixtures**: one real sample from each of the nine hosts the
-  current engine was verified against, checked in at reduced size, with the
-  expected record and a perceptual hash of the expected output. A run must
-  match the record exactly and the output within a small hash distance.
+  current engine was verified against, checked in at source size, each under
+  1 MB, with the expected record and a perceptual hash of the expected
+  output. A run must match the record within a pixel or two on the trim box
+  and the output within a small hash distance.
 - **Determinism**: same bytes and recipe twice produce identical keys and
   byte-identical output.
 - **Policy**: private-address refusal, redirect re-check, empty allowlist
@@ -407,11 +418,12 @@ regresses by more than 20%.
   curve; 6 costs 2× CPU for ~3% smaller files), `quality` 84,
   `smart_subsample` off. PNG only when a recipe demands it. Both are recipe
   fields so the trade can be re-made per deployment.
-- **libvips configuration.** Concurrency pinned to the container's core
-  count, operation cache off in batch mode (it only helps repeated
+- **libvips configuration.** Concurrency defaults to the container's core
+  count and is overridable (`Engine.Init(n)` or `PLINTH_CONCURRENCY`),
+  operation cache off in batch mode (it only helps repeated
   operations on the same image), `sequential` access everywhere the
-  pipeline allows it. Memory limits set at startup so a pathological source
-  fails fast instead of swapping.
+  pipeline allows it. libvips has no hard memory cap; the pixel cap and the
+  concurrency setting bound memory instead.
 - **Two-stage pipeline.** Fetching is I/O-bound and processing is CPU-bound,
   so the CLI runs them as separate bounded stages joined by a channel:
   many fetchers, `cores` processors. Neither waits on the other and CPU
@@ -494,4 +506,11 @@ the performance report. Metrics export is a later addition.
 - Recipe naming for CF: whether they want the LASTLOOK default or their own.
 - The 12.1 budgets are targets set before a line of code exists; the first
   benchmark run replaces them with measured numbers and CI enforces from
-  there.
+  there. Measured 2026-09-02 on Apple Silicon, 14 cores, at concurrency 1
+  (one image per core is how the batch runs, so a single-threaded image is
+  the honest unit): mean CPU per image 101 ms, max wall p95 196.4 ms, max
+  output 57924 bytes (56 KB) — over the 40 ms / 120 ms provisional budgets
+  above; `docs/bench/baseline.json` is now the enforced baseline and the 12.1
+  figures stay as the longer-term target. Only output bytes gate CI by
+  default, since they are deterministic; `--strict` also gates CPU and wall
+  time for runs on a quiet machine.
