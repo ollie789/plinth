@@ -52,7 +52,8 @@ public static class Normalizer
             var m = Measurer.Measure(source, info, recipe);
             ct.ThrowIfCancellationRequested();
             tMeasure = sw.ElapsedMilliseconds;
-            ground = new GroundRecord(m.Ground.Sampled.ToHex(), m.Ground.CornerSpread, m.Ground.CornersAgree);
+            ground = new GroundRecord(m.Ground.Sampled.ToHex(), m.Ground.CornerSpread, m.Ground.CornersAgree,
+                m.Ground.Sampled.Distance(recipe.Background) <= VerdictScorer.BackgroundTolerance);
             trim = new TrimRecord(m.Box.Left, m.Box.Top, m.Box.Width, m.Box.Height, m.TrimIsNoop, Math.Round(m.ContentShareBefore, 4));
             var v = VerdictScorer.Score(m, info, recipe);
             verdict = new VerdictRecord(v.PackShot, v.Confidence, v.Reasons);
