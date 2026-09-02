@@ -13,11 +13,17 @@ public sealed record TimingsRecord(long Inspect, long Measure, long Decode, long
     public static TimingsRecord Zero { get; } = new(0, 0, 0, 0, 0, 0);
 }
 
-/// <summary>Everything Plinth learned about one image. Stored beside the output.</summary>
+/// <summary>
+/// Everything Plinth learned about one image. Stored beside the output.
+/// <c>LibvipsVersion</c> records which libvips produced it; unlike
+/// <c>EngineVersion</c> it is not part of the key, so a mismatch is visible
+/// without invalidating anything.
+/// </summary>
 public sealed record ResultRecord(
     string Key,
     string SourceId,
     string EngineVersion,
+    string LibvipsVersion,
     string RecipeHash,
     string Status,
     string? Error,

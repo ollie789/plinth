@@ -1,11 +1,12 @@
 {
-  "runAt": "2026-09-02T02:09:08.3792510Z",
+  "runAt": "2026-09-02T02:53:48.3060330Z",
   "engineVersion": "1.0",
   "libvips": "8.18.6",
   "cores": 14,
+  "concurrency": 1,
   "iterations": 20,
-  "meanCpuMs": 120.9,
-  "maxWallP95Ms": 179.5,
+  "meanCpuMs": 101,
+  "maxWallP95Ms": 196.4,
   "peakWorkingSetMb": 0,
   "maxOutputBytes": 57924,
   "fixtures": [
@@ -13,105 +14,105 @@
       "name": "adairs-com-au.jpg",
       "inputBytes": 112072,
       "outputBytes": 55898,
-      "wallP50Ms": 169.6,
-      "wallP95Ms": 175.7,
-      "cpuMs": 220.9
+      "wallP50Ms": 184.9,
+      "wallP95Ms": 189.3,
+      "cpuMs": 191
     },
     {
       "name": "citybeach-com.jpg",
       "inputBytes": 27451,
       "outputBytes": 27028,
-      "wallP50Ms": 51.1,
-      "wallP95Ms": 55.3,
-      "cpuMs": 102.6
+      "wallP50Ms": 79.3,
+      "wallP95Ms": 79.7,
+      "cpuMs": 82
     },
     {
       "name": "contents-mediadecathlon-com.jpg",
       "inputBytes": 90271,
       "outputBytes": 31446,
-      "wallP50Ms": 174.8,
-      "wallP95Ms": 179.5,
-      "cpuMs": 217.4
+      "wallP50Ms": 189,
+      "wallP95Ms": 196.4,
+      "cpuMs": 193.2
     },
     {
       "name": "davidjones-com.jpg",
       "inputBytes": 30907,
       "outputBytes": 32382,
-      "wallP50Ms": 54.1,
-      "wallP95Ms": 54.9,
-      "cpuMs": 107
+      "wallP50Ms": 86.4,
+      "wallP95Ms": 90.4,
+      "cpuMs": 88.1
     },
     {
       "name": "feeds-frgimages-com.jpg",
       "inputBytes": 257890,
       "outputBytes": 27346,
-      "wallP50Ms": 82.1,
-      "wallP95Ms": 82.8,
-      "cpuMs": 103.1
+      "wallP50Ms": 88.4,
+      "wallP95Ms": 90,
+      "cpuMs": 89.3
     },
     {
       "name": "i8-amplience-net.jpg",
       "inputBytes": 210914,
       "outputBytes": 57924,
-      "wallP50Ms": 150.3,
-      "wallP95Ms": 153.8,
-      "cpuMs": 185.9
+      "wallP50Ms": 165.1,
+      "wallP95Ms": 165.8,
+      "cpuMs": 165.7
     },
     {
       "name": "images-asos-media-com.jpg",
       "inputBytes": 7578,
       "outputBytes": 10698,
-      "wallP50Ms": 45,
-      "wallP95Ms": 46.1,
-      "cpuMs": 66.8
+      "wallP50Ms": 50.2,
+      "wallP95Ms": 50.8,
+      "cpuMs": 50.9
     },
     {
       "name": "images-puma-com.jpg",
       "inputBytes": 36247,
       "outputBytes": 32434,
-      "wallP50Ms": 75.6,
-      "wallP95Ms": 80.5,
-      "cpuMs": 111.5
+      "wallP50Ms": 93.1,
+      "wallP95Ms": 93.6,
+      "cpuMs": 93.6
     },
     {
       "name": "img1-theiconic-com-au.jpg",
       "inputBytes": 65810,
       "outputBytes": 45576,
-      "wallP50Ms": 54.9,
-      "wallP95Ms": 55.7,
-      "cpuMs": 76.3
+      "wallP50Ms": 59.6,
+      "wallP95Ms": 60.4,
+      "cpuMs": 60.2
     },
     {
       "name": "m-media-amazon-com.jpg",
       "inputBytes": 11375,
       "outputBytes": 16892,
-      "wallP50Ms": 42.1,
-      "wallP95Ms": 42.9,
-      "cpuMs": 75.9
+      "wallP50Ms": 59.1,
+      "wallP95Ms": 60,
+      "cpuMs": 59.4
     },
     {
       "name": "media-bunnings-com-au.jpg",
       "inputBytes": 116001,
       "outputBytes": 42226,
-      "wallP50Ms": 63.9,
-      "wallP95Ms": 65.4,
-      "cpuMs": 84.3
+      "wallP50Ms": 68.2,
+      "wallP95Ms": 68.5,
+      "cpuMs": 68.6
     },
     {
       "name": "myer-media-com-au.webp",
       "inputBytes": 27138,
       "outputBytes": 18246,
-      "wallP50Ms": 64,
-      "wallP95Ms": 66,
-      "cpuMs": 152.6
+      "wallP50Ms": 116,
+      "wallP95Ms": 117.2,
+      "cpuMs": 118.9
     },
     {
       "name": "platypusshoes-com-au.jpg",
       "inputBytes": 22193,
       "outputBytes": 15160,
-      "wallP50Ms": 44.9,
-      "wallP95Ms": 46.5,
-      "cpuMs": 67.2
+      "wallP50Ms": 51.7,
+      "wallP95Ms": 52.3,
+      "cpuMs": 52.3
     }
   ]
 }

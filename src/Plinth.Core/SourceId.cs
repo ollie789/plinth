@@ -33,5 +33,8 @@ public static class SourceId
     }
 
     public static string FromBytes(ReadOnlySpan<byte> bytes) =>
-        "sha256:" + Convert.ToHexStringLower(SHA256.HashData(bytes));
+        FromSha256(Convert.ToHexStringLower(SHA256.HashData(bytes)));
+
+    /// <summary>The same id, for bytes whose SHA-256 has already been computed.</summary>
+    public static string FromSha256(string sha256Hex) => "sha256:" + sha256Hex;
 }

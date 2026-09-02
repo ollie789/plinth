@@ -18,9 +18,12 @@ public static class Normalizer
         ArgumentNullException.ThrowIfNull(recipe);
         Engine.Init();
 
-        var id = sourceId ?? SourceId.FromBytes(source);
-        var key = OutputKey.Compute(id, recipe);
+        // One hash of the source: it is both the record's sha256 and, when the
+        // caller has no id of its own, the id itself.
         var sha = Convert.ToHexStringLower(SHA256.HashData(source));
+        var id = sourceId ?? SourceId.FromSha256(sha);
+        var key = OutputKey.Compute(id, recipe);
+        var libvips = Engine.LibvipsVersion;
         var total = Stopwatch.StartNew();
 
         SourceRecord src = ResultRecord.EmptySource with { Sha256 = sha, Bytes = source.Length };
@@ -52,7 +55,7 @@ public static class Normalizer
 
             if (IsPassthrough(info, m, recipe))
             {
-                var passRecord = new ResultRecord(key, id, Engine.Version, recipe.Hash, "passthrough", null,
+                var passRecord = new ResultRecord(key, id, Engine.Version, libvips, recipe.Hash, "passthrough", null,
                     src, ground, trim, verdict,
                     new OutputRecord(info.Width, info.Height, source.Length, info.Format),
                     new TimingsRecord(tInspect, tMeasure, 0, 0, 0, total.ElapsedMilliseconds));
@@ -64,14 +67,14 @@ public static class Normalizer
             tRender = sw.ElapsedMilliseconds;
 
             var output = new OutputRecord(rendered.Info.Width, rendered.Info.Height, rendered.Info.Bytes, rendered.Info.Format);
-            var record = new ResultRecord(key, id, Engine.Version, recipe.Hash, "ok", null,
+            var record = new ResultRecord(key, id, Engine.Version, libvips, recipe.Hash, "ok", null,
                 src, ground, trim, verdict, output,
                 new TimingsRecord(tInspect, tMeasure, 0, tRender, 0, total.ElapsedMilliseconds));
             return new NormalizeResult("ok", rendered.Bytes, record);
         }
         catch (Exception e) when (e is PlinthException or NetVips.VipsException)
         {
-            var record = new ResultRecord(key, id, Engine.Version, recipe.Hash, "failed", e.Message,
+            var record = new ResultRecord(key, id, Engine.Version, libvips, recipe.Hash, "failed", e.Message,
                 src, ground, trim, verdict, null,
                 new TimingsRecord(tInspect, tMeasure, 0, tRender, 0, total.ElapsedMilliseconds));
             return new NormalizeResult("failed", null, record);

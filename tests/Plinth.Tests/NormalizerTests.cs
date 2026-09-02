@@ -20,6 +20,9 @@ public class NormalizerTests
         Assert.Equal("ok", rec.Status);
         Assert.Null(rec.Error);
         Assert.Equal(Engine.Version, rec.EngineVersion);
+        Assert.Equal(Engine.LibvipsVersion, rec.LibvipsVersion);
+        // The libvips version is diagnostic only: it is not part of the key.
+        Assert.Equal(OutputKey.Compute(rec.SourceId, rec.RecipeHash, rec.EngineVersion), rec.Key);
         Assert.Equal(Recipe.Default.Hash, rec.RecipeHash);
         Assert.Equal(OutputKey.Compute("https://img1.theiconic.com.au/x.jpg", Recipe.Default), rec.Key);
         Assert.Equal("jpeg", rec.Source.Format);

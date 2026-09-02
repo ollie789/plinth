@@ -39,9 +39,12 @@ public static class Renderer
 
         try
         {
-            // MakeOpaqueSrgb disposes the image it replaces on success, so img
-            // always refers to the live image here; the finally below disposes
-            // it exactly once whether this call, or anything after it, throws.
+            // Each step disposes the image it replaces, so after a step returns,
+            // img is the only live image and the finally below releases it. If a
+            // step throws part-way (MakeOpaqueSrgb can, between its own steps),
+            // img may name an already-disposed image and the intermediate is left
+            // to the finaliser; NetVips images are SafeHandles, so the redundant
+            // Dispose in the finally is harmless.
             img = Measurer.MakeOpaqueSrgb(img, recipe.Background);
             var decodeW = img.Width;
             var decodeH = img.Height;
