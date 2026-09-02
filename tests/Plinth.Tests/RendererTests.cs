@@ -1,0 +1,83 @@
+using NetVips;
+using Plinth.Core;
+
+namespace Plinth.Tests;
+
+public class RendererTests
+{
+    private static readonly Rgb White = Rgb.Parse("#ffffff");
+    private static readonly Rgb Black = Rgb.Parse("#000000");
+
+    private static Rendered RenderSynthetic(Recipe recipe, int w = 800, int h = 1000)
+    {
+        var bytes = Synthetic.PackShot(w, h, White, 200, 300, 300, 400, Black);
+        var info = SourceInspector.Inspect(bytes);
+        var m = Measurer.Measure(bytes, info, recipe);
+        return Renderer.Render(bytes, info, m, recipe);
+    }
+
+    [Fact]
+    public void Output_is_the_recipe_canvas_with_content_fitted_and_centred()
+    {
+        var r = RenderSynthetic(Recipe.Default);
+        Assert.Equal(1000, r.Info.Width);
+        Assert.Equal(1250, r.Info.Height);
+        Assert.Equal("webp", r.Info.Format);
+        using var img = Image.NewFromBuffer(r.Bytes);
+        var raw = img.FindTrim(threshold: 12, background: [255, 255, 255]);
+        var t = raw.Select(Convert.ToInt32).ToArray();
+        // 300x400 box scaled to fit 780x975: limited by height -> 731x975
+        Assert.InRange(t[3], 968, 978);
+        Assert.InRange(t[2], 724, 740);
+        Assert.InRange(t[0], 128, 142);
+        Assert.InRange(t[1], 132, 144);
+    }
+
+    [Fact]
+    public void Png_recipe_encodes_png()
+    {
+        var r = RenderSynthetic(Recipe.Default with { Format = "png" });
+        Assert.Equal("png", r.Info.Format);
+        Assert.Equal("VipsForeignLoadPngBuffer", Image.FindLoadBuffer(r.Bytes));
+    }
+
+    [Fact]
+    public void Decode_size_never_exceeds_the_source_and_covers_the_content_box()
+    {
+        var info = new SourceInfo("jpeg", 4000, 5000, false, 1, 1);
+        var m = new Measurement(new GroundInfo(White, 0, true), new Box(1000, 1000, 2000, 2500), false, 0.5, 410, 512);
+        var (w, h) = Renderer.DecodeSizeFor(info, m, Recipe.Default);
+        // box must reach 780x975: scale 0.39 -> 1560x1950 (+1 slack)
+        Assert.InRange(w, 1560, 1562);
+        Assert.InRange(h, 1950, 1952);
+        var small = new SourceInfo("jpeg", 400, 500, false, 1, 1);
+        var ms = new Measurement(new GroundInfo(White, 0, true), new Box(100, 100, 200, 250), false, 0.5, 400, 500);
+        Assert.Equal((401, 501), Renderer.DecodeSizeFor(small, ms, Recipe.Default));
+    }
+
+    [Fact]
+    public void No_upscale_leaves_small_content_small()
+    {
+        // Source deliberately smaller than the default 800x1000: still large enough
+        // to hold the 300x400 box at (200,300) uncropped (needs >= 500x700).
+        var r = RenderSynthetic(Recipe.Default with { Upscale = false }, 600, 800);
+        using var img = Image.NewFromBuffer(r.Bytes);
+        var raw = img.FindTrim(threshold: 12, background: [255, 255, 255]);
+        var t = raw.Select(Convert.ToInt32).ToArray();
+        Assert.InRange(t[2], 296, 306);
+        Assert.InRange(t[3], 396, 406);
+    }
+
+    [Fact]
+    public void Real_fixtures_render_to_the_canvas()
+    {
+        foreach (var (name, bytes) in Fixtures.All())
+        {
+            var info = SourceInspector.Inspect(bytes);
+            var m = Measurer.Measure(bytes, info, Recipe.Default);
+            var r = Renderer.Render(bytes, info, m, Recipe.Default);
+            Assert.Equal((1000, 1250), (r.Info.Width, r.Info.Height));
+            Assert.True(r.Bytes.Length < 200_000, $"{name} is {r.Bytes.Length} bytes");
+        }
+    }
+}
