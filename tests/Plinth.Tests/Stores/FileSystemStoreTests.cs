@@ -18,5 +18,19 @@ public class FileSystemStoreTests : OutputStoreContract, IDisposable
         Assert.True(File.Exists(Path.Combine(_root, StoreLayout.RecordPath(r.Record.Key))));
     }
 
+    [Fact]
+    public async Task Concurrent_puts_of_the_same_key_all_succeed()
+    {
+        var store = Create();
+        var r = Sample();
+        var puts = Enumerable.Range(0, 8).Select(_ => store.PutAsync(r.Record.Key, r.Output!, r.Record));
+        await Task.WhenAll(puts);
+
+        var got = await store.TryGetAsync(r.Record.Key);
+        Assert.NotNull(got);
+        Assert.Equal(r.Output, got!.Bytes);
+        Assert.Empty(Directory.EnumerateFiles(_root, "*.tmp", SearchOption.AllDirectories));
+    }
+
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
 }

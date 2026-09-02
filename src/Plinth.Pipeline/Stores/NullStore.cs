@@ -7,5 +7,10 @@ public sealed class NullStore : IOutputStore
 {
     public Task<bool> ExistsAsync(string key, CancellationToken ct = default) => Task.FromResult(false);
     public Task<StoredOutput?> TryGetAsync(string key, CancellationToken ct = default) => Task.FromResult<StoredOutput?>(null);
-    public Task PutAsync(string key, byte[] bytes, ResultRecord record, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task PutAsync(string key, byte[] bytes, ResultRecord record, CancellationToken ct = default)
+    {
+        StoreGuard.RequireStorable(record);
+        return Task.CompletedTask;
+    }
 }

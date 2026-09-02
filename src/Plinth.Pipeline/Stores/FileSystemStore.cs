@@ -26,12 +26,13 @@ public sealed class FileSystemStore(string root) : IOutputStore
         StoreGuard.RequireStorable(record);
         var imagePath = Path.Combine(Root, StoreLayout.ImagePath(key, record.Output!.Format));
         Directory.CreateDirectory(Path.GetDirectoryName(imagePath)!);
-        // Write to a temp name and rename so a reader never sees a half-written file.
-        var tmp = imagePath + ".tmp";
+        // Write to a per-call temp name and rename so a reader never sees a half-written
+        // file, and concurrent puts of the same key never share (and race on) one temp file.
+        var tmp = $"{imagePath}.{Guid.NewGuid():N}.tmp";
         await File.WriteAllBytesAsync(tmp, bytes, ct);
         File.Move(tmp, imagePath, overwrite: true);
         var recordPath = Path.Combine(Root, StoreLayout.RecordPath(key));
-        var tmpRecord = recordPath + ".tmp";
+        var tmpRecord = $"{recordPath}.{Guid.NewGuid():N}.tmp";
         await File.WriteAllTextAsync(tmpRecord, record.ToJson(), ct);
         File.Move(tmpRecord, recordPath, overwrite: true);
     }
