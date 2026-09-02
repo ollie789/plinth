@@ -17,6 +17,15 @@ public static class VerdictScorer
     /// </summary>
     public const int BackgroundTolerance = 40;
 
+    /// <summary>
+    /// Is the sampled ground the recipe's own background, within
+    /// <see cref="BackgroundTolerance"/>? The single definition of that test:
+    /// the verdict gates its framing checks on it, and the renderer picks the
+    /// canvas colour by it.
+    /// </summary>
+    public static bool MatchesBackground(Rgb ground, Recipe recipe) =>
+        ground.Distance(recipe.Background) <= BackgroundTolerance;
+
     public static Verdict Score(Measurement m, SourceInfo info, Recipe recipe)
     {
         var (w, h) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
@@ -26,9 +35,11 @@ public static class VerdictScorer
         void Fail(string reason, double penalty) { reasons.Add(reason); score -= penalty; }
 
         // The ground is the strongest single signal, so it carries the largest
-        // penalty and it gates the two framing tests below.
-        var foreignGround = m.Ground.Sampled.Distance(recipe.Background) > BackgroundTolerance;
-        if (foreignGround) Fail("ground-not-background", 0.5);
+        // penalty and it gates the two framing tests below. It stops short of
+        // 0.5 on its own: a clean pack shot on its own grey ground has to keep
+        // a margin over the line, and it takes a second failure to cross it.
+        var foreignGround = !MatchesBackground(m.Ground.Sampled, recipe);
+        if (foreignGround) Fail("ground-not-background", 0.4);
 
         // Studio lighting gradients spread the corners a little on perfectly
         // good pack shots, so the corners get slack: at least 24, and more when

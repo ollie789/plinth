@@ -46,7 +46,9 @@ public class VerdictScorerTests
         var grey = new GroundInfo(Rgb.Parse("#808080"), 4, true);
         var v = VerdictScorer.Score(M(grey, new Box(200, 200, 600, 600), 0.6), Info, Recipe.Default);
         Assert.True(v.PackShot);
-        Assert.Equal(0.5, v.Confidence);
+        // The ground alone costs 0.4, so a clean shot on its own grey keeps a
+        // margin over the line rather than sitting exactly on it.
+        Assert.Equal(0.6, v.Confidence);
         Assert.Equal(["ground-not-background"], v.Reasons);
     }
 

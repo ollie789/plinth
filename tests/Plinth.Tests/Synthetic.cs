@@ -18,6 +18,7 @@ public static class Synthetic
             "jpeg" => img.JpegsaveBuffer(q: quality),
             "png" => img.PngsaveBuffer(),
             "webp" => img.WebpsaveBuffer(q: quality),
+            "tiff" => img.TiffsaveBuffer(),
             _ => throw new ArgumentException(format),
         };
     }

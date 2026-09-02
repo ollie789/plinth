@@ -235,12 +235,16 @@ The score starts at 1.0 and each failed test subtracts and adds a reason:
 
 | Test | Penalty |
 |---|---|
-| `ground-not-background` — sampled ground more than 40 from the recipe background | −0.5 |
+| `ground-not-background` — sampled ground more than 40 from the recipe background | −0.4 |
 | `corners-disagree` — corner spread over `max(24, trimThreshold × 2)` | −0.3 |
 | `touches-edges` — the box touches two or more frame edges | −0.2 |
 | `content-fills-frame` — content share before trim over 0.98 | −0.2 |
 | `content-tiny` — content share before trim under 0.05 | −0.3 |
 | `thin-strip` — box aspect beyond 6:1 either way | −0.2 |
+
+The ground penalty stops short of 0.5 deliberately: a clean pack shot
+photographed on its own grey ground scores 0.6 and keeps a margin over the
+line, so it takes a second failure to make an image editorial.
 
 `touches-edges` and `content-fills-frame` only fire when
 `ground-not-background` did. A tight product crop that runs to the frame edge
@@ -248,6 +252,10 @@ on white is how Amazon and Myer ship a pack shot; it is evidence of a scene
 only when the ground is not the recipe's in the first place. The corner test
 gets slack for studio lighting gradients, which spread the corners a little on
 perfectly good pack shots.
+
+An editorial passthrough returns the retailer's original bytes and format,
+which may be larger than a tile; formats a browser cannot show (tiff, heif) are
+carded instead, whatever the policy says.
 
 The shape comes from a 2,074-image run over the live feed: 591 images were
 flagged, and on inspection every sample was a scene. Their grounds sat 104,
@@ -596,7 +604,16 @@ is a later addition.
   the background, a corner spread of 24) are the next thing to re-measure once
   the passthrough rate is visible in production. The `images-asos-media-com`
   fixture is the case it fixed: a real pack shot on a light gradient ground
-  that the old scoring called editorial.
+  that the old scoring called editorial. Two limits are known and accepted for
+  now, both of them the price of leaning on the ground:
+  - A scene on a near-white backdrop — a model on a bright cyclorama, ground
+    within 40 of white — still cards on white. On these features it is
+    indistinguishable from a tight product crop, which is exactly the case the
+    gating rule was added to protect.
+  - A pack shot on a foreign ground with a strong lighting gradient loses both
+    the ground and the corners (0.3), lands at 0.3 and passes through rather
+    than carding. It is returned untouched, so nothing is damaged; it just
+    misses the canvas.
 - Azure subscription, resource group and the custom domain for the store.
 - Whether LASTLOOK's warm replica is worth its small monthly cost versus
   relying entirely on pre-warming at sync.

@@ -114,6 +114,10 @@ passes through untouched (`status: "passthrough"`, `passthroughReason:
 "editorial"`) and only `editorial: "card"` trims and cards it anyway. A pack
 shot photographed on its own grey ground cards on that grey, edge to edge.
 
+Editorial passthrough returns the retailer's original bytes and format, which
+may be larger than a tile; formats a browser cannot show (tiff, heif) are
+carded instead.
+
 ## Batch with the CLI
 
 ```

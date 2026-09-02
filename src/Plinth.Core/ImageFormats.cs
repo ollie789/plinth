@@ -6,6 +6,14 @@ namespace Plinth.Core;
 /// </summary>
 public static class ImageFormats
 {
+    /// <summary>
+    /// Formats every browser can render. An editorial passthrough hands back
+    /// the source's own bytes and format, so it is only safe for these; a tiff
+    /// or a heif has to be carded whatever the policy says, or the tile would
+    /// be something the page cannot show.
+    /// </summary>
+    public static bool IsBrowserSafe(string format) => format is "jpeg" or "png" or "webp" or "gif";
+
     /// <summary>Canonical file extension, without the dot.</summary>
     public static string ExtensionFor(string format) => format switch
     {

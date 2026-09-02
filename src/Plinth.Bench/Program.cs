@@ -87,6 +87,8 @@ var summary = new BenchSummary(
     results.Max(r => r.OutputBytes),
     results);
 
+Console.WriteLine($"recipe {recipe.Hash} ({recipe.Canonical()})");
+Console.WriteLine();
 Console.WriteLine($"{"fixture",-40} {"in KB",7} {"out KB",7} {"p50 ms",7} {"p95 ms",7} {"cpu ms",7}");
 foreach (var r in results)
     Console.WriteLine($"{r.Name,-40} {r.InputBytes / 1024,7} {r.OutputBytes / 1024,7} {r.WallP50Ms,7} {r.WallP95Ms,7} {r.CpuMs,7}");

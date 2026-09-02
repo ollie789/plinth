@@ -17,7 +17,9 @@ public sealed record TimingsRecord(long Inspect, long Measure, long Decode, long
 /// Everything Plinth learned about one image. Stored beside the output.
 /// <c>LibvipsVersion</c> records which libvips produced it; unlike
 /// <c>EngineVersion</c> it is not part of the key, so a mismatch is visible
-/// without invalidating anything.
+/// without invalidating anything. <c>PassthroughReason</c> says why the source
+/// was returned untouched — <c>already-normalised</c> or <c>editorial</c> — and
+/// is null for every other status.
 /// </summary>
 public sealed record ResultRecord(
     string Key,
@@ -27,7 +29,6 @@ public sealed record ResultRecord(
     string RecipeHash,
     string Status,
     string? Error,
-    /// <summary>Why the source was returned untouched: "already-normalised", "editorial", or null.</summary>
     string? PassthroughReason,
     SourceRecord Source,
     GroundRecord Ground,

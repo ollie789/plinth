@@ -53,7 +53,7 @@ public static class Normalizer
             ct.ThrowIfCancellationRequested();
             tMeasure = sw.ElapsedMilliseconds;
             ground = new GroundRecord(m.Ground.Sampled.ToHex(), m.Ground.CornerSpread, m.Ground.CornersAgree,
-                m.Ground.Sampled.Distance(recipe.Background) <= VerdictScorer.BackgroundTolerance);
+                VerdictScorer.MatchesBackground(m.Ground.Sampled, recipe));
             trim = new TrimRecord(m.Box.Left, m.Box.Top, m.Box.Width, m.Box.Height, m.TrimIsNoop, Math.Round(m.ContentShareBefore, 4));
             var v = VerdictScorer.Score(m, info, recipe);
             verdict = new VerdictRecord(v.PackShot, v.Confidence, v.Reasons);
@@ -66,8 +66,10 @@ public static class Normalizer
 
             // The verdict now decides. A scene shrunk onto a white card is worse
             // than the scene untouched, so unless the recipe asks for a card the
-            // editorial image is handed back exactly as it arrived.
-            if (!v.PackShot && recipe.Editorial == "passthrough") return Passthrough("editorial");
+            // editorial image is handed back exactly as it arrived — but only
+            // when a browser could show those bytes; anything else is carded.
+            if (!v.PackShot && recipe.Editorial == "passthrough" && ImageFormats.IsBrowserSafe(info.Format))
+                return Passthrough("editorial");
             if (IsPassthrough(info, m, recipe)) return Passthrough("already-normalised");
 
             sw.Restart();
