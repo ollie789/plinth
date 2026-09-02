@@ -46,6 +46,13 @@ public class CliTests : IDisposable
         Assert.Equal(1, Count(first.Lines, "failed"));
         Assert.Equal(3, Directory.GetFiles(_out, "*.webp", SearchOption.AllDirectories).Length);
 
+        // A processed item's line is the whole result record, so the manifest doubles as the
+        // performance and verdict report without anyone re-reading the store.
+        var okLine = first.Lines.First(l => l.GetProperty("status").GetString() == "ok");
+        Assert.True(okLine.GetProperty("verdict").TryGetProperty("packShot", out _));
+        Assert.True(okLine.GetProperty("timingsMs").GetProperty("total").GetInt64() >= 0);
+        Assert.True(okLine.GetProperty("output").GetProperty("bytes").GetInt32() > 0);
+
         var second = await Run(root, "run", "--input", Path.Combine(_dir, "in"), "--output", _out);
         Assert.Equal(0, second.Code);
         Assert.Equal(3, Count(second.Lines, "skipped"));
@@ -157,6 +164,31 @@ public class CliTests : IDisposable
             Assert.Contains("plinth key:", stderr.ToString());
         }
         finally { Console.SetError(original); }
+    }
+
+    [Fact]
+    public async Task An_unreadable_file_fails_only_its_own_line_and_the_run_still_succeeds()
+    {
+        var dir = Path.Combine(_dir, "locked");
+        Directory.CreateDirectory(dir);
+        for (var i = 0; i < 2; i++)
+            File.WriteAllBytes(Path.Combine(dir, $"q{i}.jpg"), Synthetic.PackShot(500 + i * 10, 700, White, 80, 80, 150, 200, Black));
+        var locked = Path.Combine(dir, "zz-locked.jpg");
+        File.WriteAllBytes(locked, Synthetic.PackShot(520, 700, White, 80, 80, 150, 200, Black));
+        if (OperatingSystem.IsWindows()) return;   // no mode bits to take away
+
+        File.SetUnixFileMode(locked, UnixFileMode.None);
+        try
+        {
+            var root = CliApp.Build();
+            var result = await Run(root, "run", "--input", dir, "--output", Path.Combine(_dir, "locked-out"));
+            Assert.Equal(0, result.Code);
+            Assert.Equal(3, result.Lines.Count);
+            Assert.Equal(2, Count(result.Lines, "ok"));
+            Assert.Equal(1, Count(result.Lines, "failed"));
+            Assert.NotNull(result.Lines.Single(l => l.GetProperty("status").GetString() == "failed").GetProperty("error").GetString());
+        }
+        finally { File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
     }
 
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, true); }

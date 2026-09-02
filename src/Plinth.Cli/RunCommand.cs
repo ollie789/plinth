@@ -16,7 +16,12 @@ public static class RunCommand
 
     private sealed record Item(string Display, string? Url, string? Path);
     private sealed record Fetched(Item Item, string SourceId, string Key, byte[]? Bytes, string? Skip, string? Error);
-    private sealed record ManifestLine(string Key, string SourceId, string Status, string? Error, int? OutputBytes);
+    /// <summary>
+    /// The shape for items that never reached the pixels. Everything the pipeline actually ran
+    /// on is written as its full <see cref="ResultRecord"/> instead, so a manifest line carries
+    /// the verdict and the timings without a second pass over the store.
+    /// </summary>
+    private sealed record SkipLine(string Key, string SourceId, string Status);
 
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -61,12 +66,21 @@ public static class RunCommand
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
-                Console.Error.WriteLine($"plinth run: {e.Message}");
+                Console.Error.WriteLine($"plinth run: {Innermost(e)}");
                 return 2;
             }
         });
         return cmd;
     }
+
+    /// <summary>
+    /// A fault inside the parallel stages arrives wrapped; the wrapper says nothing useful, so
+    /// report the message of the exception that actually failed.
+    /// </summary>
+    private static string Innermost(Exception e) =>
+        e is AggregateException agg && agg.Flatten().InnerExceptions.Count > 0
+            ? Innermost(agg.Flatten().InnerExceptions[0])
+            : e.Message;
 
     public static Recipe ResolveRecipe(string? nameOrPath, RecipeCatalog catalog)
     {
@@ -140,14 +154,18 @@ public static class RunCommand
         var counts = new Dictionary<string, int>();
         var manifestLock = new object();
 
-        void Emit(ManifestLine line)
+        void Emit(string status, string json)
         {
             lock (manifestLock)
             {
-                manifest.WriteLine(JsonSerializer.Serialize(line, Json));
-                counts[line.Status] = counts.GetValueOrDefault(line.Status) + 1;
+                manifest.WriteLine(json);
+                counts[status] = counts.GetValueOrDefault(status) + 1;
             }
         }
+
+        void EmitRecord(ResultRecord record) => Emit(record.Status, record.ToJson());
+        void EmitSkip(string key, string sourceId, string status) =>
+            Emit(status, JsonSerializer.Serialize(new SkipLine(key, sourceId, status), Json));
 
         var fetched = Channel.CreateBounded<Fetched>(new BoundedChannelOptions(workers * 2) { SingleWriter = false });
         var todo = Channel.CreateUnbounded<Item>();
@@ -171,46 +189,67 @@ public static class RunCommand
 
         await Parallel.ForEachAsync(fetched.Reader.ReadAllAsync(ct), new ParallelOptions { MaxDegreeOfParallelism = workers, CancellationToken = ct }, async (f, token) =>
         {
-            if (f.Skip is not null) { Emit(new ManifestLine(f.Key, f.SourceId, f.Skip, null, null)); return; }
-            if (f.Error is not null) { Emit(new ManifestLine(f.Key, f.SourceId, "failed", f.Error, null)); return; }
-            var result = Normalizer.Normalize(f.Bytes!, recipe, f.SourceId, token);
-            if (result.Status is "ok" or "passthrough")
-                await store.PutAsync(result.Record.Key, result.Output!, result.Record, token);
-            Emit(new ManifestLine(result.Record.Key, f.SourceId, result.Status, result.Record.Error, result.Output?.Length));
+            if (f.Skip is not null) { EmitSkip(f.Key, f.SourceId, f.Skip); return; }
+
+            // One item's bad luck is that item's manifest line, never the batch's exit code:
+            // a corrupt file, a full disk or a store that rejects one put all land here.
+            try
+            {
+                if (f.Error is not null) { EmitRecord(ResultRecord.Failed(f.Key, f.SourceId, recipe, f.Error)); return; }
+                var result = Normalizer.Normalize(f.Bytes!, recipe, f.SourceId, token);
+                if (result.Status is "ok" or "passthrough")
+                    await store.PutAsync(result.Record.Key, result.Output!, result.Record, token);
+                EmitRecord(result.Record);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                EmitRecord(ResultRecord.Failed(f.Key, f.SourceId, recipe, e.Message));
+            }
         });
         await closer;
         return counts;
     }
 
+    /// <summary>
+    /// Never throws for anything but cancellation: an item that cannot be fetched comes back as
+    /// a <see cref="Fetched"/> carrying its error, so the fetch workers stay alive and every
+    /// input item still reaches the process stage and gets its one manifest line.
+    /// </summary>
     private static async Task<Fetched> FetchOneAsync(Item item, Recipe recipe, IOutputStore store, ISourceFetcher fetcher, bool refresh, CancellationToken ct)
     {
-        if (item.Path is not null)
+        var display = item.Path ?? item.Url!;
+        try
         {
-            byte[] bytes;
-            try { bytes = await File.ReadAllBytesAsync(item.Path, ct); }
-            catch (IOException e) { return new Fetched(item, item.Path, OutputKey.Compute(item.Path, recipe), null, null, e.Message); }
-            var id = SourceId.FromBytes(bytes);
-            var key = OutputKey.Compute(id, recipe);
-            if (!refresh && await store.ExistsAsync(key, ct)) return new Fetched(item, id, key, null, "skipped", null);
-            return new Fetched(item, id, key, bytes, null, null);
+            if (item.Path is not null)
+            {
+                var bytes = await File.ReadAllBytesAsync(item.Path, ct);
+                var id = SourceId.FromBytes(bytes);
+                var key = OutputKey.Compute(id, recipe);
+                if (!refresh && await store.ExistsAsync(key, ct)) return new Fetched(item, id, key, null, "skipped", null);
+                return new Fetched(item, id, key, bytes, null, null);
+            }
+
+            string sourceId;
+            try { sourceId = SourceId.FromUrl(item.Url!); }
+            catch (PlinthException e) { return new Fetched(item, item.Url!, OutputKey.Compute(item.Url!, recipe), null, null, e.Message); }
+            var urlKey = OutputKey.Compute(sourceId, recipe);
+            if (!refresh && await store.ExistsAsync(urlKey, ct)) return new Fetched(item, sourceId, urlKey, null, "skipped", null);
+
+            byte[] body;
+            try { body = (await fetcher.FetchAsync(item.Url!, ct)).Bytes; }
+            catch (PlinthException e) { return new Fetched(item, sourceId, urlKey, null, null, e.Message); }
+
+            if (refresh)
+            {
+                var stored = await store.TryGetAsync(urlKey, ct);
+                if (stored is not null && stored.Record.Source.Sha256 == Convert.ToHexStringLower(SHA256.HashData(body)))
+                    return new Fetched(item, sourceId, urlKey, null, "unchanged", null);
+            }
+            return new Fetched(item, sourceId, urlKey, body, null, null);
         }
-
-        string sourceId;
-        try { sourceId = SourceId.FromUrl(item.Url!); }
-        catch (PlinthException e) { return new Fetched(item, item.Url!, OutputKey.Compute(item.Url!, recipe), null, null, e.Message); }
-        var urlKey = OutputKey.Compute(sourceId, recipe);
-        if (!refresh && await store.ExistsAsync(urlKey, ct)) return new Fetched(item, sourceId, urlKey, null, "skipped", null);
-
-        byte[] body;
-        try { body = (await fetcher.FetchAsync(item.Url!, ct)).Bytes; }
-        catch (PlinthException e) { return new Fetched(item, sourceId, urlKey, null, null, e.Message); }
-
-        if (refresh)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
-            var stored = await store.TryGetAsync(urlKey, ct);
-            if (stored is not null && stored.Record.Source.Sha256 == Convert.ToHexStringLower(SHA256.HashData(body)))
-                return new Fetched(item, sourceId, urlKey, null, "unchanged", null);
+            return new Fetched(item, display, OutputKey.Compute(display, recipe), null, null, e.Message);
         }
-        return new Fetched(item, sourceId, urlKey, body, null, null);
     }
 }
