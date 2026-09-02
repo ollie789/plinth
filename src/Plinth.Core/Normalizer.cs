@@ -12,7 +12,7 @@ public sealed record NormalizeResult(string Status, byte[]? Output, ResultRecord
 /// </summary>
 public static class Normalizer
 {
-    public static NormalizeResult Normalize(byte[] source, Recipe recipe, string? sourceId = null)
+    public static NormalizeResult Normalize(byte[] source, Recipe recipe, string? sourceId = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(recipe);
@@ -34,6 +34,8 @@ public static class Normalizer
 
         try
         {
+            ct.ThrowIfCancellationRequested();
+
             // Validate at the boundary: a bad recipe becomes a failed record like
             // any other bad input. Validation rounds contentShare, so the key is
             // recomputed from the recipe the pipeline will actually use.
@@ -42,11 +44,13 @@ public static class Normalizer
 
             var sw = Stopwatch.StartNew();
             var info = SourceInspector.Inspect(source);
+            ct.ThrowIfCancellationRequested();
             tInspect = sw.ElapsedMilliseconds;
             src = new SourceRecord(sha, source.Length, info.Width, info.Height, info.Format, info.HasAlpha, info.Orientation);
 
             sw.Restart();
             var m = Measurer.Measure(source, info, recipe);
+            ct.ThrowIfCancellationRequested();
             tMeasure = sw.ElapsedMilliseconds;
             ground = new GroundRecord(m.Ground.Sampled.ToHex(), m.Ground.CornerSpread, m.Ground.CornersAgree);
             trim = new TrimRecord(m.Box.Left, m.Box.Top, m.Box.Width, m.Box.Height, m.TrimIsNoop, Math.Round(m.ContentShareBefore, 4));

@@ -51,4 +51,9 @@ public sealed record ResultRecord(
     public static GroundRecord EmptyGround { get; } = new("#000000", 0, false);
     public static TrimRecord EmptyTrim { get; } = new(0, 0, 0, 0, true, 0);
     public static VerdictRecord EmptyVerdict { get; } = new(false, 0, []);
+
+    /// <summary>A record for work that never reached the pixels (fetch failed, bad URL).</summary>
+    public static ResultRecord Failed(string key, string sourceId, Recipe recipe, string error) =>
+        new(key, sourceId, Engine.Version, Engine.LibvipsVersion, recipe.Hash, "failed", error,
+            EmptySource, EmptyGround, EmptyTrim, EmptyVerdict, null, TimingsRecord.Zero);
 }
