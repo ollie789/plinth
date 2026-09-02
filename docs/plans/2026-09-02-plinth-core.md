@@ -1002,10 +1002,10 @@ public static class SourceInspector
         }
         using (img)
         {
-            var pages = img.GetTypeOf("n-pages") != 0 ? img.Get("n-pages") is int n ? n : 1 : 1;
-            var orientation = img.GetTypeOf("orientation") != 0 ? img.Get("orientation") is int o ? o : 1 : 1;
+            var pages = img.GetTypeOf("n-pages") != IntPtr.Zero && img.Get("n-pages") is int n ? n : 1;
+            var orientation = img.GetTypeOf("orientation") != IntPtr.Zero && img.Get("orientation") is int o ? o : 1;
             var width = img.Width;
-            var height = pages > 1 && img.GetTypeOf("page-height") != 0 && img.Get("page-height") is int ph
+            var height = pages > 1 && img.GetTypeOf("page-height") != IntPtr.Zero && img.Get("page-height") is int ph
                 ? ph : img.Height;
             if ((long)width * height > maxPixels)
                 throw new PlinthException($"source too large: {width}x{height} exceeds {maxPixels} pixels");
@@ -1853,8 +1853,9 @@ public static class Normalizer
             var rendered = Renderer.Render(source, info, m, recipe);
             tRender = sw.ElapsedMilliseconds;
 
+            var output = new OutputRecord(rendered.Info.Width, rendered.Info.Height, rendered.Info.Bytes, rendered.Info.Format);
             var record = new ResultRecord(key, id, Engine.Version, recipe.Hash, "ok", null,
-                src, ground, trim, verdict, rendered.Info,
+                src, ground, trim, verdict, output,
                 new TimingsRecord(tInspect, tMeasure, 0, tRender, 0, total.ElapsedMilliseconds));
             return new NormalizeResult("ok", rendered.Bytes, record);
         }
@@ -1947,7 +1948,9 @@ public class GoldenTests
         var a = Normalizer.Normalize(bytes, Recipe.Default, "https://x/a.jpg");
         var b = Normalizer.Normalize(bytes, Recipe.Default, "https://x/a.jpg");
         Assert.Equal(a.Output, b.Output);
-        Assert.Equal(a.Record with { TimingsMs = TimingsRecord.Zero }, b.Record with { TimingsMs = TimingsRecord.Zero });
+        // Records hold lists (verdict reasons), so compare their JSON rather than rely on reference equality.
+        Assert.Equal((a.Record with { TimingsMs = TimingsRecord.Zero }).ToJson(),
+                     (b.Record with { TimingsMs = TimingsRecord.Zero }).ToJson());
     }
 
     [Fact]
