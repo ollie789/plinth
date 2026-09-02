@@ -39,36 +39,43 @@ public static class Measurer
         Engine.Init();
         using var thumb = LoadWorkingCopy(bytes, recipe, MeasureSide);
 
-        var ground = SampleGround(thumb, recipe.TrimThreshold);
-
-        var (fullW, fullH) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
-        // Independent per-axis scales: the thumbnail is fit within MeasureSide x MeasureSide,
-        // so whichever axis is the limiting one rounds to an exact ratio while the other axis
-        // carries the rounding error. A single shared scale drifts on that non-limiting axis
-        // (worse for more extreme aspect ratios); per-axis scales don't.
-        var scaleX = thumb.Width / (double)fullW;
-        var scaleY = thumb.Height / (double)fullH;
-
-        var raw = thumb.FindTrim(threshold: recipe.TrimThreshold, background: ground.Sampled.ToVips());
-        var t = raw.Select(Convert.ToInt32).ToArray();
-        var noop = t[2] == 0 || t[3] == 0 || (t[0] == 0 && t[1] == 0 && t[2] == thumb.Width && t[3] == thumb.Height);
-
-        Box box;
-        if (noop)
+        try
         {
-            box = new Box(0, 0, fullW, fullH);
-        }
-        else
-        {
-            var left = Math.Clamp((int)Math.Floor(t[0] / scaleX), 0, fullW - 1);
-            var top = Math.Clamp((int)Math.Floor(t[1] / scaleY), 0, fullH - 1);
-            var right = Math.Clamp((int)Math.Ceiling((t[0] + t[2]) / scaleX), left + 1, fullW);
-            var bottom = Math.Clamp((int)Math.Ceiling((t[1] + t[3]) / scaleY), top + 1, fullH);
-            box = new Box(left, top, right - left, bottom - top);
-        }
+            var ground = SampleGround(thumb, recipe.TrimThreshold);
 
-        var share = Math.Max(box.Width / (double)fullW, box.Height / (double)fullH);
-        return new Measurement(ground, box, noop, share, thumb.Width, thumb.Height);
+            var (fullW, fullH) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
+            // Independent per-axis scales: the thumbnail is fit within MeasureSide x MeasureSide,
+            // so whichever axis is the limiting one rounds to an exact ratio while the other axis
+            // carries the rounding error. A single shared scale drifts on that non-limiting axis
+            // (worse for more extreme aspect ratios); per-axis scales don't.
+            var scaleX = thumb.Width / (double)fullW;
+            var scaleY = thumb.Height / (double)fullH;
+
+            var raw = thumb.FindTrim(threshold: recipe.TrimThreshold, background: ground.Sampled.ToVips());
+            var t = raw.Select(Convert.ToInt32).ToArray();
+            var noop = t[2] == 0 || t[3] == 0 || (t[0] == 0 && t[1] == 0 && t[2] == thumb.Width && t[3] == thumb.Height);
+
+            Box box;
+            if (noop)
+            {
+                box = new Box(0, 0, fullW, fullH);
+            }
+            else
+            {
+                var left = Math.Clamp((int)Math.Floor(t[0] / scaleX), 0, fullW - 1);
+                var top = Math.Clamp((int)Math.Floor(t[1] / scaleY), 0, fullH - 1);
+                var right = Math.Clamp((int)Math.Ceiling((t[0] + t[2]) / scaleX), left + 1, fullW);
+                var bottom = Math.Clamp((int)Math.Ceiling((t[1] + t[3]) / scaleY), top + 1, fullH);
+                box = new Box(left, top, right - left, bottom - top);
+            }
+
+            var share = Math.Max(box.Width / (double)fullW, box.Height / (double)fullH);
+            return new Measurement(ground, box, noop, share, thumb.Width, thumb.Height);
+        }
+        catch (VipsException e)
+        {
+            throw new PlinthException("measure failed", e);
+        }
     }
 
     /// <summary>Orientation-applied, sRGB, opaque, 3-band working copy no larger than <paramref name="side"/>.</summary>
@@ -84,12 +91,19 @@ public static class Measurer
         {
             throw new PlinthException("could not decode source", e);
         }
-        using var opaque = MakeOpaqueSrgb(img, recipe.Background);
-        // The thumbnail pipeline is sequential (single forward pass over the
-        // decoder). We then read overlapping regions of it repeatedly - four
-        // corner patches plus a full-frame trim scan - so it must be forced
-        // into memory first for random access, or the second read fails.
-        return opaque.CopyMemory();
+        try
+        {
+            using var opaque = MakeOpaqueSrgb(img, recipe.Background);
+            // The thumbnail pipeline is sequential (single forward pass over the
+            // decoder). We then read overlapping regions of it repeatedly - four
+            // corner patches plus a full-frame trim scan - so it must be forced
+            // into memory first for random access, or the second read fails.
+            return opaque.CopyMemory();
+        }
+        catch (VipsException e)
+        {
+            throw new PlinthException("measure failed", e);
+        }
     }
 
     internal static Image MakeOpaqueSrgb(Image img, Rgb background)

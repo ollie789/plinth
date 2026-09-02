@@ -72,4 +72,18 @@ public class NormalizerTests
         Assert.Equal(r.Record.Key, ResultRecord.FromJson(json).Key);
         Assert.DoesNotContain("\n", json);
     }
+
+    [Fact]
+    public void A_truncated_fixture_never_throws_out_of_normalize()
+    {
+        var (_, bytes) = Fixtures.All().First();
+        var truncated = bytes[..(bytes.Length * 6 / 10)];
+
+        var r = Normalizer.Normalize(truncated, Recipe.Default, "https://x/t.jpg");
+
+        Assert.NotNull(r.Record.Key);
+        Assert.True(r.Status is "failed" or "ok");
+        if (r.Status == "failed")
+            Assert.NotNull(r.Record.Error);
+    }
 }

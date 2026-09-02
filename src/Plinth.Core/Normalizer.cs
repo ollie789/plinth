@@ -63,7 +63,7 @@ public static class Normalizer
                 new TimingsRecord(tInspect, tMeasure, 0, tRender, 0, total.ElapsedMilliseconds));
             return new NormalizeResult("ok", rendered.Bytes, record);
         }
-        catch (PlinthException e)
+        catch (Exception e) when (e is PlinthException or NetVips.VipsException)
         {
             var record = new ResultRecord(key, id, Engine.Version, recipe.Hash, "failed", e.Message,
                 src, ground, trim, verdict, null,
