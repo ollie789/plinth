@@ -70,6 +70,16 @@ public class RecipeTests
     }
 
     [Fact]
+    public void FromJson_wraps_malformed_or_wrong_shaped_input_in_PlinthException()
+    {
+        Assert.Throws<PlinthException>(() => Recipe.FromJson("\"hello\""));
+        Assert.Throws<PlinthException>(() => Recipe.FromJson("[1,2,3]"));
+        Assert.Throws<PlinthException>(() => Recipe.FromJson("{\"width\":\"foo\"}"));
+        Assert.Throws<PlinthException>(() => Recipe.FromJson("{\"width\":1.5}"));
+        Assert.Throws<PlinthException>(() => Recipe.FromJson("{not json"));
+    }
+
+    [Fact]
     public void Rgb_parses_hex_and_measures_chebyshev_distance()
     {
         var a = Rgb.Parse("#ffffff");

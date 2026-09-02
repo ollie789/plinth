@@ -53,25 +53,47 @@ public sealed record Recipe
 
     public static Recipe FromJson(string json)
     {
-        using var doc = JsonDocument.Parse(json);
-        var o = doc.RootElement;
-        var r = new Recipe();
-        foreach (var p in o.EnumerateObject())
+        JsonDocument doc;
+        try
         {
-            r = p.Name switch
-            {
-                "aspect" => r with { Aspect = p.Value.GetString() ?? "" },
-                "width" => r with { Width = p.Value.GetInt32() },
-                "contentShare" => r with { ContentShare = p.Value.GetDouble() },
-                "background" => r with { Background = Rgb.Parse(p.Value.GetString() ?? "") },
-                "trimThreshold" => r with { TrimThreshold = p.Value.GetInt32() },
-                "format" => r with { Format = p.Value.GetString() ?? "" },
-                "quality" => r with { Quality = p.Value.GetInt32() },
-                "upscale" => r with { Upscale = p.Value.GetBoolean() },
-                _ => throw new PlinthException($"unknown recipe field '{p.Name}'"),
-            };
+            doc = JsonDocument.Parse(json);
         }
-        return r.Validated();
+        catch (JsonException ex)
+        {
+            throw new PlinthException($"recipe JSON is malformed: {ex.Message}", ex);
+        }
+
+        using (doc)
+        {
+            var o = doc.RootElement;
+            if (o.ValueKind != JsonValueKind.Object)
+                throw new PlinthException("recipe JSON is not an object");
+
+            var r = new Recipe();
+            foreach (var p in o.EnumerateObject())
+            {
+                try
+                {
+                    r = p.Name switch
+                    {
+                        "aspect" => r with { Aspect = p.Value.GetString() ?? "" },
+                        "width" => r with { Width = p.Value.GetInt32() },
+                        "contentShare" => r with { ContentShare = p.Value.GetDouble() },
+                        "background" => r with { Background = Rgb.Parse(p.Value.GetString() ?? "") },
+                        "trimThreshold" => r with { TrimThreshold = p.Value.GetInt32() },
+                        "format" => r with { Format = p.Value.GetString() ?? "" },
+                        "quality" => r with { Quality = p.Value.GetInt32() },
+                        "upscale" => r with { Upscale = p.Value.GetBoolean() },
+                        _ => throw new PlinthException($"unknown recipe field '{p.Name}'"),
+                    };
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+                {
+                    throw new PlinthException($"recipe field '{p.Name}' has an invalid value", ex);
+                }
+            }
+            return r.Validated();
+        }
     }
 
     public Recipe Validated()
