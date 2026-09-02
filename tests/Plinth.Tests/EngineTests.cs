@@ -7,7 +7,7 @@ public class EngineTests
     [Fact]
     public void Version_is_the_algorithm_version()
     {
-        Assert.Equal("1.0", Engine.Version);
+        Assert.Equal("1.1", Engine.Version);
     }
 
     [Fact]

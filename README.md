@@ -125,7 +125,7 @@ reached the pixels — `ok`, `passthrough` or `failed` — is written as its ful
 result record, so the manifest doubles as the verdict and timing report:
 
 ```json
-{"key":"86d6dd…","sourceId":"sha256:3f939c…","engineVersion":"1.0","libvipsVersion":"8.18.6","recipeHash":"a1f4459a67b5e0c7","status":"ok","error":null,"source":{"sha256":"3f939c…","bytes":22193,"width":560,"height":700,"format":"jpeg","hadAlpha":false,"orientationApplied":1},"ground":{"sampled":"#e5e5e5","cornerSpread":5,"cornersAgree":true},"trim":{"left":53,"top":355,"width":472,"height":221,"noop":false,"contentShareBefore":0.8429},"verdict":{"packShot":true,"confidence":1,"reasons":[]},"output":{"width":1000,"height":1250,"bytes":15160,"format":"webp"},"timingsMs":{"inspect":15,"measure":56,"decode":0,"render":54,"encode":0,"total":127}}
+{"key":"86d6dd…","sourceId":"sha256:3f939c…","engineVersion":"1.1","libvipsVersion":"8.18.6","recipeHash":"a1f4459a67b5e0c7","status":"ok","error":null,"source":{"sha256":"3f939c…","bytes":22193,"width":560,"height":700,"format":"jpeg","hadAlpha":false,"orientationApplied":1},"ground":{"sampled":"#e5e5e5","cornerSpread":5,"cornersAgree":true},"trim":{"left":53,"top":355,"width":472,"height":221,"noop":false,"contentShareBefore":0.8429},"verdict":{"packShot":true,"confidence":1,"reasons":[]},"output":{"width":1000,"height":1250,"bytes":15160,"format":"webp"},"timingsMs":{"inspect":15,"measure":56,"decode":0,"render":54,"encode":0,"total":127}}
 ```
 
 An item that was never processed — `skipped` (the key was already in the

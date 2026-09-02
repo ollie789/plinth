@@ -154,7 +154,7 @@ Emitted for every image, success or failure. Stored beside the output as
 ```json
 {
   "key": "…",
-  "engineVersion": "1.0",
+  "engineVersion": "1.1",
   "libvipsVersion": "8.18.6",
   "recipeHash": "…",
   "source": { "sha256": "…", "bytes": 184233, "width": 1600, "height": 2000, "format": "jpeg", "hadAlpha": false, "orientationApplied": 1 },
