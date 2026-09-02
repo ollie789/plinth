@@ -178,4 +178,13 @@ public class NormalizerTests
             if (r.Status == "failed") Assert.NotNull(r.Record.Error);
         }
     }
+
+    [Fact]
+    public void A_cancelled_token_surfaces_as_cancellation_not_a_failed_record()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        Assert.Throws<OperationCanceledException>(() =>
+            Normalizer.Normalize(Shot(), Recipe.Default, "https://a/b.jpg", cts.Token));
+    }
 }
