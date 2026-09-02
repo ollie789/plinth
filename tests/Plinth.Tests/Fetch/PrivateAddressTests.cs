@@ -27,6 +27,15 @@ public class PrivateAddressTests
     [InlineData("::ffff:10.0.0.1", true)]
     [InlineData("::ffff:8.8.8.8", false)]
     [InlineData("2606:4700::6810:116", false)]
+    // Transition formats are judged by the IPv4 address they carry, not by their prefix:
+    // a deprecated-but-public embedded address is still public, a private one is still private.
+    [InlineData("::10.0.0.1", true)]
+    [InlineData("::8.8.8.8", false)]
+    [InlineData("64:ff9b::a00:1", true)]
+    [InlineData("64:ff9b::808:808", false)]
+    [InlineData("2002:0a00:0001::", true)]
+    [InlineData("2002:0808:0808::", false)]
+    [InlineData("2001:0:1::1", true)]
     public void Blocks_private_loopback_link_local_and_metadata_ranges(string ip, bool blocked) =>
         Assert.Equal(blocked, PrivateAddress.IsBlocked(IPAddress.Parse(ip)));
 }
