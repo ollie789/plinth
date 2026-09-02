@@ -19,6 +19,13 @@ public class EngineTests
     }
 
     [Fact]
+    public void Warm_up_runs_a_whole_normalise_and_does_not_throw()
+    {
+        Engine.WarmUp();
+        Engine.WarmUp();
+    }
+
+    [Fact]
     public void Concurrency_is_explicit_and_a_later_default_init_leaves_it_alone()
     {
         Engine.Init(1);

@@ -28,6 +28,7 @@ public static class ApiHost
         var builder = WebApplication.CreateBuilder(args);
         options ??= PipelineOptions.FromEnvironment(Environment.GetEnvironmentVariable);
         Engine.Init(options.Concurrency ?? Environment.ProcessorCount);
+        Engine.WarmUp();
 
         builder.Logging.ClearProviders();
         builder.Logging.AddJsonConsole();

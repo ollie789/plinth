@@ -16,6 +16,9 @@ COPY --from=build /app .
 ENV ASPNETCORE_HTTP_PORTS=8080 \
     PLINTH_STORE=none
 EXPOSE 8080
+# No curl in this image, and nothing to add one for: running the CLI's own `version` proves
+# the runtime starts and libvips loads, which is what a dead container would fail at.
+HEALTHCHECK --interval=30s --timeout=3s CMD ["dotnet", "plinth.dll", "version"]
 USER $APP_UID
 ENTRYPOINT ["dotnet", "plinth.dll"]
 CMD ["version"]

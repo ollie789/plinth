@@ -6,8 +6,26 @@ permissions:
   contents: read
   packages: write
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore
+      - run: dotnet build --no-restore -c Release
+      - run: dotnet test --no-build -c Release --logger "trx;LogFileName=results.trx"
+      - name: Benchmark against the committed baseline (output-bytes gate; CPU and wall are informational off-machine)
+        run: dotnet run -c Release --no-build --project src/Plinth.Bench -- --iterations 5
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: tests/Plinth.Tests/TestResults/results.trx
   publish:
     runs-on: ubuntu-latest
+    needs: test
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -23,7 +41,8 @@ jobs:
           images: ghcr.io/ollie789/plinth
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest
+            # A pre-release tag (v1.2.0-rc1) publishes its own tag but must not move :latest.
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
       - uses: docker/build-push-action@v6
         with:
           context: .

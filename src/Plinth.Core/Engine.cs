@@ -52,6 +52,23 @@ public static class Engine
         Concurrency = NetVips.NetVips.Concurrency;
     }
 
+    /// <summary>
+    /// Run one tiny normalise so the first real request does not pay for JIT and for libvips
+    /// loading its decoders and encoders. The image is drawn in memory — no fixture on disk,
+    /// nothing to ship — and the result is thrown away. Batch runs skip this: they amortise
+    /// the same cost over the first few of many images anyway.
+    /// </summary>
+    public static void WarmUp()
+    {
+        Init();
+        using var ground = NetVips.Image.Black(64, 80, bands: 3) + new double[] { 255, 255, 255 };
+        using var box = NetVips.Image.Black(24, 30, bands: 3);
+        using var image = ground.Insert(box, 20, 25)
+            .Cast(NetVips.Enums.BandFormat.Uchar)
+            .Copy(interpretation: NetVips.Enums.Interpretation.Srgb);
+        _ = Normalizer.Normalize(image.JpegsaveBuffer(q: 90), Recipe.Default, "plinth:warmup");
+    }
+
     private static int? FromEnvironment() =>
         int.TryParse(Environment.GetEnvironmentVariable(ConcurrencyVariable),
             System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n)

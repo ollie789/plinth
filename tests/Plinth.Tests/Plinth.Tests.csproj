@@ -12,10 +12,14 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
-    <PackageReference Include="NetVips.Native.osx-arm64" />
     <PackageReference Include="NetVips.Native.linux-x64" />
     <PackageReference Include="NetVips.Native.linux-arm64" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+
+  <!-- Only this machine needs the macOS native; a Linux publish should not carry it. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <PackageReference Include="NetVips.Native.osx-arm64" />
   </ItemGroup>
 
   <ItemGroup>
