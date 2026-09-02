@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\src\Plinth.Core\Plinth.Core.csproj" />
     <ProjectReference Include="..\..\src\Plinth.Pipeline\Plinth.Pipeline.csproj" />
     <ProjectReference Include="..\..\src\Plinth.Api\Plinth.Api.csproj" />
+    <ProjectReference Include="..\..\src\Plinth.Cli\Plinth.Cli.csproj" />
   </ItemGroup>
 
   <ItemGroup>
