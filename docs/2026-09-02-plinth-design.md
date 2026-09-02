@@ -494,4 +494,7 @@ the performance report. Metrics export is a later addition.
 - Recipe naming for CF: whether they want the LASTLOOK default or their own.
 - The 12.1 budgets are targets set before a line of code exists; the first
   benchmark run replaces them with measured numbers and CI enforces from
-  there.
+  there. Measured 2026-09-02 on Apple Silicon, 14 cores: mean CPU per image
+  120.9 ms, max p95 179.5 ms, max output 57924 bytes (56 KB) — over the 40 ms
+  / 120 ms provisional budgets above; `docs/bench/baseline.json` is now the
+  enforced baseline and the 12.1 figures stay as the longer-term target.
