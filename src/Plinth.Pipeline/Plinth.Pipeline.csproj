@@ -5,4 +5,8 @@
   <ItemGroup>
     <ProjectReference Include="../Plinth.Core/Plinth.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="Azure.Identity" />
+  </ItemGroup>
 </Project>
