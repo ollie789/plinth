@@ -48,13 +48,24 @@ public static class SourceInspector
 
     private static readonly string[] MetadataFields = ["exif-data", "xmp-data", "icc-profile-data", "iptc-data"];
 
-    private static string LoaderToFormat(string loader)
+    /// <summary>
+    /// An allowlist, not a transformation: libvips loads far more than Plinth is
+    /// willing to decode (svg, pdf, magick, ...), and its loader names are not
+    /// format names ("nsgif"). Mapping explicitly keeps both under control.
+    /// </summary>
+    private static readonly Dictionary<string, string> Formats = new(StringComparer.Ordinal)
     {
-        // "VipsForeignLoadJpegBuffer" -> "jpeg"
-        const string prefix = "VipsForeignLoad";
-        var s = loader.StartsWith(prefix, StringComparison.Ordinal) ? loader[prefix.Length..] : loader;
-        foreach (var suffix in new[] { "Buffer", "File", "Source" })
-            if (s.EndsWith(suffix, StringComparison.Ordinal)) { s = s[..^suffix.Length]; break; }
-        return s.ToLowerInvariant();
-    }
+        ["VipsForeignLoadJpegBuffer"] = "jpeg",
+        ["VipsForeignLoadPngBuffer"] = "png",
+        ["VipsForeignLoadWebpBuffer"] = "webp",
+        ["VipsForeignLoadNsgifBuffer"] = "gif",
+        ["VipsForeignLoadGifBuffer"] = "gif",
+        ["VipsForeignLoadTiffBuffer"] = "tiff",
+        ["VipsForeignLoadHeifBuffer"] = "heif",
+    };
+
+    private static string LoaderToFormat(string loader) =>
+        Formats.TryGetValue(loader, out var format)
+            ? format
+            : throw new PlinthException($"unsupported image format: {loader}");
 }
