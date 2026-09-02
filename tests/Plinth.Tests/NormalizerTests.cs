@@ -11,7 +11,13 @@ public class NormalizerTests
     private static readonly Rgb Grey = Rgb.Parse("#808080");
     private static byte[] Shot() => Synthetic.PackShot(800, 1000, White, 200, 300, 300, 400, Black);
 
-    /// <summary>Not a pack shot: a foreign ground with content out to the frame edge.</summary>
+    /// <summary>
+    /// Not a pack shot: content out to the frame edge over a ground that is not
+    /// the recipe's. A 2 px border is under a pixel on the 512 px working copy,
+    /// so the corner patches land mostly on the content and the sampled ground
+    /// comes back near-black — which is what a real scene does too, its corners
+    /// being part of the scene rather than a backdrop.
+    /// </summary>
     private static byte[] Scene() => Synthetic.PackShot(800, 1000, Grey, 2, 2, 796, 996, Black);
 
     [Fact]
@@ -76,6 +82,8 @@ public class NormalizerTests
         var scene = Scene();
         var r = Normalizer.Normalize(scene, Recipe.Default);
         Assert.False(r.Record.Verdict.PackShot);
+        Assert.Equal(["ground-not-background", "touches-edges", "content-fills-frame"], r.Record.Verdict.Reasons);
+        Assert.False(r.Record.Ground.MatchesBackground);
         Assert.Equal("passthrough", r.Status);
         Assert.Equal("passthrough", r.Record.Status);
         Assert.Equal("editorial", r.Record.PassthroughReason);
