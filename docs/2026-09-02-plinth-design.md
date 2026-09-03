@@ -155,7 +155,7 @@ Emitted for every image, success or failure. Stored beside the output as
 ```json
 {
   "key": "…",
-  "engineVersion": "1.2",
+  "engineVersion": "1.3",
   "libvipsVersion": "8.18.6",
   "recipeHash": "…",
   "source": { "sha256": "…", "bytes": 184233, "width": 1600, "height": 2000, "format": "jpeg", "hadAlpha": false, "orientationApplied": 1 },
@@ -276,6 +276,15 @@ and their corner spreads 52, 58 and 72 against 0, 0 and 0.
 - Scale the trimmed content to fit the content box — `contentShare` of the
   canvas on both axes, 85% or 850×1062 by default — enlarging if `upscale`
   allows.
+- **Wide content gets more of the width.** A trimmed box at least
+  `WideAspect` (1.6) times wider than it is tall is fitted to `WideShare`
+  (0.92) of the tile width instead, the height box unchanged; portrait and
+  square content keeps `contentShare`. Both are constants in `Renderer`, not
+  recipe fields, so the same box always renders the same way. The audit over
+  373 carded shoes is why: their trimmed boxes run 2.0–2.3 wide to tall, with
+  slides as far as 3.7, and on a 4:5 tile at 85% of the width a shoe covers
+  about a third of the tile. A wide item is limited by width, never by height,
+  so widening the width box is the whole of the fix.
 - Composite centred at the recipe size on the recipe background — or, for a
   pack shot whose sampled ground is more than 40 from it, on that sampled
   ground, so a product photographed on its own grey cards edge to edge with no

@@ -107,6 +107,12 @@ recipe JSON file; a partial object inherits the rest from these defaults.
 | `quality` | `84` | Encoder quality where the format has one |
 | `editorial` | `passthrough` | What to do with an image the verdict says is not a pack shot |
 
+Wide content gets more of the tile: a trimmed box at least 1.6 times wider
+than it is tall is fitted to 92% of the tile width rather than `contentShare`,
+with the height box unchanged. Footwear is why — a trimmed shoe runs 2.0–2.3
+wide to tall, and at 85% of the width it covers about a third of a 4:5 tile.
+The two numbers are fixed in the engine, not recipe fields.
+
 The verdict decides what happens: a model on a studio backdrop, a room or a
 rug in a lounge is not a pack shot, and shrinking one onto a white card makes
 a grey box floating on white — so under the default `editorial` policy it
@@ -160,7 +166,7 @@ reached the pixels — `ok`, `passthrough` or `failed` — is written as its ful
 result record, so the manifest doubles as the verdict and timing report:
 
 ```json
-{"key":"86d6dd…","sourceId":"sha256:3f939c…","engineVersion":"1.2","libvipsVersion":"8.18.6","recipeHash":"e9f6c8f3f6a3d450","status":"ok","error":null,"passthroughReason":null,"source":{"sha256":"3f939c…","bytes":22193,"width":560,"height":700,"format":"jpeg","hadAlpha":false,"orientationApplied":1},"ground":{"sampled":"#e5e5e5","cornerSpread":5,"cornersAgree":true,"matchesBackground":true},"trim":{"left":53,"top":355,"width":472,"height":221,"noop":false,"contentShareBefore":0.8429},"verdict":{"packShot":true,"confidence":1,"reasons":[]},"output":{"width":1000,"height":1250,"bytes":15160,"format":"webp"},"timingsMs":{"inspect":15,"measure":56,"decode":0,"render":54,"encode":0,"total":127}}
+{"key":"86d6dd…","sourceId":"sha256:3f939c…","engineVersion":"1.3","libvipsVersion":"8.18.6","recipeHash":"e9f6c8f3f6a3d450","status":"ok","error":null,"passthroughReason":null,"source":{"sha256":"3f939c…","bytes":22193,"width":560,"height":700,"format":"jpeg","hadAlpha":false,"orientationApplied":1},"ground":{"sampled":"#e5e5e5","cornerSpread":5,"cornersAgree":true,"matchesBackground":true},"trim":{"left":53,"top":355,"width":472,"height":221,"noop":false,"contentShareBefore":0.8429},"verdict":{"packShot":true,"confidence":1,"reasons":[]},"output":{"width":1000,"height":1250,"bytes":15160,"format":"webp"},"timingsMs":{"inspect":15,"measure":56,"decode":0,"render":54,"encode":0,"total":127}}
 ```
 
 An item that was never processed — `skipped` (the key was already in the
