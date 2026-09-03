@@ -12,7 +12,7 @@ public class RecipeTests
         var r = Recipe.Default;
         Assert.Equal("4:5", r.Aspect);
         Assert.Equal(1000, r.Width);
-        Assert.Equal(0.78, r.ContentShare);
+        Assert.Equal(0.85, r.ContentShare);
         Assert.Equal("#ffffff", r.Background.ToHex());
         Assert.Equal(12, r.TrimThreshold);
         Assert.Equal("webp", r.Format);
@@ -25,7 +25,7 @@ public class RecipeTests
     public void Canonical_json_has_sorted_keys_and_no_whitespace()
     {
         Assert.Equal(
-            "{\"aspect\":\"4:5\",\"background\":\"#ffffff\",\"contentShare\":0.78,\"editorial\":\"passthrough\",\"format\":\"webp\",\"quality\":84,\"trimThreshold\":12,\"upscale\":true,\"width\":1000}",
+            "{\"aspect\":\"4:5\",\"background\":\"#ffffff\",\"contentShare\":0.85,\"editorial\":\"passthrough\",\"format\":\"webp\",\"quality\":84,\"trimThreshold\":12,\"upscale\":true,\"width\":1000}",
             Recipe.Default.Canonical());
     }
 
@@ -53,8 +53,8 @@ public class RecipeTests
         var r = Recipe.Default;
         Assert.Equal(1000, r.CanvasWidth);
         Assert.Equal(1250, r.CanvasHeight);
-        Assert.Equal(780, r.ContentBoxWidth);
-        Assert.Equal(975, r.ContentBoxHeight);
+        Assert.Equal(850, r.ContentBoxWidth);
+        Assert.Equal(1062, r.ContentBoxHeight);
         var sq = r with { Aspect = "1:1", Width = 800 };
         Assert.Equal(800, sq.CanvasHeight);
     }
@@ -86,8 +86,8 @@ public class RecipeTests
     [Fact]
     public void Validated_rounds_contentShare_so_the_hash_and_the_box_agree()
     {
-        var a = (Recipe.Default with { ContentShare = 0.780005 }).Validated();
-        Assert.Equal(0.78, a.ContentShare);
+        var a = (Recipe.Default with { ContentShare = 0.850005 }).Validated();
+        Assert.Equal(0.85, a.ContentShare);
         Assert.Equal(Recipe.Default.Hash, a.Hash);
         Assert.Equal(Recipe.Default.ContentBoxWidth, a.ContentBoxWidth);
     }

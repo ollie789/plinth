@@ -99,6 +99,38 @@ public class NormalizerTests
     }
 
     [Fact]
+    public void A_pack_shot_that_already_fills_its_frame_passes_through_untouched()
+    {
+        // A 780x960 box in an 800x1000 frame is 0.975 of it before any trim:
+        // the canvas has nothing to add, and carding would only shrink the
+        // product behind a margin.
+        var framed = Synthetic.PackShot(800, 1000, White, 10, 20, 780, 960, Black);
+        var r = Normalizer.Normalize(framed, Recipe.Default);
+        Assert.True(r.Record.Verdict.PackShot);
+        Assert.InRange(r.Record.Trim.ContentShareBefore, Normalizer.FramedFill, 1.0);
+        Assert.Equal("passthrough", r.Status);
+        Assert.Equal("framed", r.Record.PassthroughReason);
+        Assert.Equal("jpeg", r.Record.Output!.Format);
+        Assert.Equal(framed, r.Output);
+
+        var carded = Normalizer.Normalize(framed, Recipe.Default with { Editorial = "card" });
+        Assert.Equal("ok", carded.Status);
+        Assert.Null(carded.Record.PassthroughReason);
+        Assert.Equal((1000, 1250), (carded.Record.Output!.Width, carded.Record.Output.Height));
+    }
+
+    [Fact]
+    public void A_padded_pack_shot_is_still_carded()
+    {
+        // The same frame with a 300x400 box is 0.4 of it: air to remove, so the
+        // canvas earns its place.
+        var r = Normalizer.Normalize(Shot(), Recipe.Default);
+        Assert.True(r.Record.Trim.ContentShareBefore < Normalizer.FramedFill);
+        Assert.Equal("ok", r.Status);
+        Assert.Null(r.Record.PassthroughReason);
+    }
+
+    [Fact]
     public void An_editorial_image_a_browser_cannot_show_is_carded_rather_than_passed_through()
     {
         // Passthrough hands back the source's own bytes and format, so it is
@@ -205,8 +237,8 @@ public class NormalizerTests
     public void A_contentShare_beyond_four_decimals_is_rounded_at_the_boundary()
     {
         var bytes = Shot();
-        var a = Normalizer.Normalize(bytes, Recipe.Default with { ContentShare = 0.780005 }, "https://a/b.jpg");
-        var b = Normalizer.Normalize(bytes, Recipe.Default with { ContentShare = 0.78 }, "https://a/b.jpg");
+        var a = Normalizer.Normalize(bytes, Recipe.Default with { ContentShare = 0.850005 }, "https://a/b.jpg");
+        var b = Normalizer.Normalize(bytes, Recipe.Default with { ContentShare = 0.85 }, "https://a/b.jpg");
         Assert.Equal("ok", a.Status);
         Assert.Equal(b.Record.RecipeHash, a.Record.RecipeHash);
         Assert.Equal(b.Record.Key, a.Record.Key);
