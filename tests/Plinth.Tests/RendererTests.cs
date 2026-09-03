@@ -16,6 +16,9 @@ public class RendererTests
         return Renderer.Render(bytes, info, m, recipe, recipe.Background);
     }
 
+    private static Measurement Box(int w, int h) =>
+        new(new GroundInfo(White, 0, true), new Box(0, 0, w, h), false, 0.5, 512, 512);
+
     [Fact]
     public void Output_is_the_recipe_canvas_with_content_fitted_and_centred()
     {
@@ -31,6 +34,48 @@ public class RendererTests
         Assert.InRange(t[2], 784, 800);
         Assert.InRange(t[0], 97, 110);
         Assert.InRange(t[1], 93, 105);
+    }
+
+    [Fact]
+    public void Wide_content_is_given_more_of_the_tile_width_than_the_recipe_share()
+    {
+        // A trimmed shoe box runs 2.0-2.3 wide to tall, so at 85% of the tile
+        // width it covers about a third of the tile. Past 1.6 the box widens.
+        Assert.Equal(920, Renderer.ContentBoxWidthFor(Box(600, 200), Recipe.Default));
+        Assert.Equal(920, Renderer.ContentBoxWidthFor(Box(320, 200), Recipe.Default));
+        // Just under the ratio, and portrait content, keep the recipe share.
+        Assert.Equal(850, Renderer.ContentBoxWidthFor(Box(318, 200), Recipe.Default));
+        Assert.Equal(850, Renderer.ContentBoxWidthFor(Box(300, 400), Recipe.Default));
+        // The height box never moves, so a wide item gains width, not height.
+        Assert.Equal(1062, Recipe.Default.ContentBoxHeight);
+    }
+
+    [Fact]
+    public void A_wide_box_renders_across_the_wider_content_box_and_stays_centred()
+    {
+        var bytes = Synthetic.PackShot(800, 1000, White, 100, 400, 600, 200, Black);
+        var info = SourceInspector.Inspect(bytes);
+        var m = Measurer.Measure(bytes, info, Recipe.Default);
+        var r = Renderer.Render(bytes, info, m, Recipe.Default, White);
+
+        using var img = Image.NewFromBuffer(r.Bytes);
+        var t = img.FindTrim(threshold: 12, background: [255, 255, 255]).Select(Convert.ToInt32).ToArray();
+        // 600x200 is 3.0 wide, so it fits the 920 box rather than the 850 one.
+        Assert.InRange(t[2], 918, 922);
+        Assert.InRange(t[0] + t[2] / 2.0, 495, 505);
+        Assert.InRange(t[1] + t[3] / 2.0, 620, 630);
+    }
+
+    [Fact]
+    public void A_wide_box_decodes_enough_pixels_to_cover_the_wider_content_box()
+    {
+        var info = new SourceInfo("jpeg", 4000, 5000, false, 1, 1);
+        var m = Box(2400, 800) with { Box = new Box(800, 2100, 2400, 800) };
+        var (w, _) = Renderer.DecodeSizeFor(info, m, Recipe.Default);
+        // Whatever the decode target, the box within it must still be able to
+        // reach the 920 px it is about to be fitted into.
+        Assert.True(w * (m.Box.Width / 4000.0) >= Renderer.ContentBoxWidthFor(m, Recipe.Default),
+            $"decode {w} leaves the box short of {Renderer.ContentBoxWidthFor(m, Recipe.Default)}");
     }
 
     [Fact]

@@ -7,7 +7,7 @@ public static class Engine
     /// Version of the normalisation algorithm, not of the package. It is part
     /// of every output key; bump it only when output bytes would change.
     /// </summary>
-    public const string Version = "1.2";
+    public const string Version = "1.3";
 
     /// <summary>Environment override for the worker-thread count, read once at first Init.</summary>
     public const string ConcurrencyVariable = "PLINTH_CONCURRENCY";

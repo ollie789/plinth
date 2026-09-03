@@ -12,10 +12,39 @@ public sealed record Rendered(byte[] Bytes, OutputInfo Info, int DecodeWidth, in
 /// </summary>
 public static class Renderer
 {
+    /// <summary>
+    /// A trimmed box wider than this ratio is wide content — a shoe, a slide, a
+    /// belt — rather than a garment shot upright.
+    /// </summary>
+    public const double WideAspect = 1.6;
+
+    /// <summary>
+    /// A trimmed box wider than <see cref="WideAspect"/> may use up to this
+    /// share of the tile width; the height box is unchanged. Portrait and
+    /// square content keeps the recipe's <c>contentShare</c>. Fixed rather than
+    /// a recipe field, so the same box always renders the same way.
+    /// </summary>
+    public const double WideShare = 0.92;
+
+    /// <summary>
+    /// The content box width this box is fitted into: the recipe's share,
+    /// widened for wide content. The height box is always
+    /// <see cref="Recipe.ContentBoxHeight"/>, so a wide item gains tile width
+    /// without growing taller.
+    /// </summary>
+    public static int ContentBoxWidthFor(Measurement m, Recipe recipe)
+    {
+        var boxAspect = m.Box.Width / (double)Math.Max(1, m.Box.Height);
+        var share = boxAspect >= WideAspect ? Math.Max(recipe.ContentShare, WideShare) : recipe.ContentShare;
+        return (int)Math.Round(recipe.CanvasWidth * share);
+    }
+
     public static (int w, int h) DecodeSizeFor(SourceInfo info, Measurement m, Recipe recipe)
     {
         var (w, h) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
-        var s = Math.Max(recipe.ContentBoxWidth / (double)m.Box.Width, recipe.ContentBoxHeight / (double)m.Box.Height);
+        // The same wide-aware box the render fits into, or a wide item would be
+        // decoded at too few pixels to fill the width it is about to be given.
+        var s = Math.Max(ContentBoxWidthFor(m, recipe) / (double)m.Box.Width, recipe.ContentBoxHeight / (double)m.Box.Height);
         if (s > 1) s = 1;
         return ((int)Math.Ceiling(w * s) + 1, (int)Math.Ceiling(h * s) + 1);
     }
@@ -74,7 +103,7 @@ public static class Renderer
                 img = crop;
             }
 
-            var f = Math.Min(recipe.ContentBoxWidth / (double)img.Width, recipe.ContentBoxHeight / (double)img.Height);
+            var f = Math.Min(ContentBoxWidthFor(m, recipe) / (double)img.Width, recipe.ContentBoxHeight / (double)img.Height);
             if (!recipe.Upscale) f = Math.Min(f, 1);
             if (Math.Abs(f - 1) >= 0.001)
             {

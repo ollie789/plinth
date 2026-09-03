@@ -155,7 +155,7 @@ Emitted for every image, success or failure. Stored beside the output as
 ```json
 {
   "key": "…",
-  "engineVersion": "1.2",
+  "engineVersion": "1.3",
   "libvipsVersion": "8.18.6",
   "recipeHash": "…",
   "source": { "sha256": "…", "bytes": 184233, "width": 1600, "height": 2000, "format": "jpeg", "hadAlpha": false, "orientationApplied": 1 },
@@ -201,6 +201,34 @@ Only the front doors fetch; Core takes bytes.
   fails the fetch.
 - Caps: 12 MB body (checked on `Content-Length` and again on the read
   stream), 12 s timeout, a fixed User-Agent that names the tool.
+
+**Source upgrades.** Some feeds hand us a thumbnail when the same host will
+serve the master for the same request, so the URL is rewritten before anything
+else — before the fetch, and before the source id and the key are computed
+from it. A thumbnail and its master are different sources, not two spellings
+of one, so they must never share a tile; keying on the upgraded URL is what
+makes that true, and it also means the API and the CLI reach the same tile
+from either spelling.
+
+| Host | Rewrite | Evidence |
+|---|---|---|
+| `m.media-amazon.com` | Drop the last size token before the extension: `/images/I/<id>._AC_SY445_.jpg` → `/images/I/<id>.jpg` | The feed carries thumbnails 154–679 px wide; the master is 500–2560 px, already padded on a square white canvas |
+| `assets.adidas.com` | The first `/w_500,` in the path becomes `/w_1200,` | The feed asks for `w_500`; the same path at `w_1200` returns 1200 px |
+
+The table lives in `SourceUpgrades`, is matched on exact hostname, and is pure
+— a rule is a claim about a host's URL scheme, never a probe. An unknown host
+or a non-matching URL comes back untouched, and an upgrade that turns out to
+404 fails the fetch like any other bad URL rather than silently falling back.
+The allowlist gate is unaffected: every rule keeps the host it matched.
+
+Each rule takes the narrowest reading available. Amazon's token is located as
+the substring from the last `._` to the `_.` immediately before the extension,
+then validated whole, so an id carrying a dot of its own
+(`71abc.x._AC_SY445_.jpg` → `71abc.x.jpg`) keeps it; adidas rewrites only the
+first width segment. `Apply` is idempotent, which is what lets the CLI upgrade
+a URL list *before* deduping it: two spellings of one Amazon source collapse to
+one item, one fetch and one manifest line, rather than being fetched and
+reported twice.
 
 ### 5.2 Normalise
 
@@ -276,6 +304,15 @@ and their corner spreads 52, 58 and 72 against 0, 0 and 0.
 - Scale the trimmed content to fit the content box — `contentShare` of the
   canvas on both axes, 85% or 850×1062 by default — enlarging if `upscale`
   allows.
+- **Wide content gets more of the width.** A trimmed box at least
+  `WideAspect` (1.6) times wider than it is tall is fitted to `WideShare`
+  (0.92) of the tile width instead, the height box unchanged; portrait and
+  square content keeps `contentShare`. Both are constants in `Renderer`, not
+  recipe fields, so the same box always renders the same way. The audit over
+  373 carded shoes is why: their trimmed boxes run 2.0–2.3 wide to tall, with
+  slides as far as 3.7, and on a 4:5 tile at 85% of the width a shoe covers
+  about a third of the tile. A wide item is limited by width, never by height,
+  so widening the width box is the whole of the fix.
 - Composite centred at the recipe size on the recipe background — or, for a
   pack shot whose sampled ground is more than 40 from it, on that sampled
   ground, so a product photographed on its own grey cards edge to edge with no
