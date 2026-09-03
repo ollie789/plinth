@@ -212,14 +212,23 @@ from either spelling.
 
 | Host | Rewrite | Evidence |
 |---|---|---|
-| `m.media-amazon.com` | Drop the size token before the extension: `/images/I/<id>._AC_SY445_.jpg` → `/images/I/<id>.jpg` | The feed carries thumbnails 154–679 px wide; the master is 500–2560 px, already padded on a square white canvas |
-| `assets.adidas.com` | `/w_500,` → `/w_1200,` in the path | The feed asks for `w_500`; the same path at `w_1200` returns 1200 px |
+| `m.media-amazon.com` | Drop the last size token before the extension: `/images/I/<id>._AC_SY445_.jpg` → `/images/I/<id>.jpg` | The feed carries thumbnails 154–679 px wide; the master is 500–2560 px, already padded on a square white canvas |
+| `assets.adidas.com` | The first `/w_500,` in the path becomes `/w_1200,` | The feed asks for `w_500`; the same path at `w_1200` returns 1200 px |
 
 The table lives in `SourceUpgrades`, is matched on exact hostname, and is pure
 — a rule is a claim about a host's URL scheme, never a probe. An unknown host
 or a non-matching URL comes back untouched, and an upgrade that turns out to
 404 fails the fetch like any other bad URL rather than silently falling back.
 The allowlist gate is unaffected: every rule keeps the host it matched.
+
+Each rule takes the narrowest reading available. Amazon's token is located as
+the substring from the last `._` to the `_.` immediately before the extension,
+then validated whole, so an id carrying a dot of its own
+(`71abc.x._AC_SY445_.jpg` → `71abc.x.jpg`) keeps it; adidas rewrites only the
+first width segment. `Apply` is idempotent, which is what lets the CLI upgrade
+a URL list *before* deduping it: two spellings of one Amazon source collapse to
+one item, one fetch and one manifest line, rather than being fetched and
+reported twice.
 
 ### 5.2 Normalise
 

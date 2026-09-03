@@ -24,6 +24,39 @@ public class SourceUpgradesTests
         // A dot inside the id is not a size token: no trailing _._ pair.
         const string dotted = "https://m.media-amazon.com/images/I/71abc.DEF.jpg";
         Assert.Equal(dotted, SourceUpgrades.Apply(dotted));
+        // Nor is an underscore run that does not close against the extension.
+        const string underscored = "https://m.media-amazon.com/images/I/71abc_DEF_.jpg";
+        Assert.Equal(underscored, SourceUpgrades.Apply(underscored));
+    }
+
+    [Fact]
+    public void Only_the_last_size_token_is_dropped_so_a_dotted_id_survives()
+    {
+        // The token runs from the LAST "._" to the "_." before the extension,
+        // so an id carrying a dot of its own keeps everything ahead of it. A
+        // leftmost match would have taken "71abc" and thrown ".x" away.
+        Assert.Equal("https://m.media-amazon.com/images/I/71abc.x.jpg",
+            SourceUpgrades.Apply("https://m.media-amazon.com/images/I/71abc.x._AC_SY445_.jpg"));
+        Assert.Equal("https://m.media-amazon.com/images/I/71abc._AC_SY445_.jpg",
+            SourceUpgrades.Apply("https://m.media-amazon.com/images/I/71abc._AC_SY445_._SL500_.jpg"));
+        // A "._" earlier in the path cannot start a token: the class has no "/".
+        Assert.Equal("https://m.media-amazon.com/images/._x_/71abcDEF.jpg",
+            SourceUpgrades.Apply("https://m.media-amazon.com/images/._x_/71abcDEF.jpg"));
+    }
+
+    [Fact]
+    public void Applying_the_table_twice_is_applying_it_once()
+    {
+        foreach (var url in new[]
+                 {
+                     "https://m.media-amazon.com/images/I/71abcDEF._AC_SY445_.jpg",
+                     "https://assets.adidas.com/images/w_500,f_auto/abc123/Shoes.jpg",
+                     "https://cdn.example.com/a.jpg",
+                 })
+        {
+            var once = SourceUpgrades.Apply(url);
+            Assert.Equal(once, SourceUpgrades.Apply(once));
+        }
     }
 
     [Fact]
@@ -38,6 +71,15 @@ public class SourceUpgradesTests
     {
         const string other = "https://assets.adidas.com/images/w_600,f_auto/abc123/Shoes.jpg";
         Assert.Equal(other, SourceUpgrades.Apply(other));
+    }
+
+    [Fact]
+    public void Only_the_first_adidas_width_segment_is_raised()
+    {
+        // The width lives in the first transform segment; a later path part
+        // that happens to read the same way is not the one being asked for.
+        Assert.Equal("https://assets.adidas.com/images/w_1200,f_auto/abc/w_500,x/Shoes.jpg",
+            SourceUpgrades.Apply("https://assets.adidas.com/images/w_500,f_auto/abc/w_500,x/Shoes.jpg"));
     }
 
     [Fact]

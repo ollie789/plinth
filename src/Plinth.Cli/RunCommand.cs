@@ -14,6 +14,7 @@ public static class RunCommand
 {
     private const int FetchWorkers = 8;
 
+    /// <summary><c>Display</c> is the line as the list wrote it; <c>Url</c> is the upgraded one everything else uses.</summary>
     private sealed record Item(string Display, string? Url, string? Path);
     private sealed record Fetched(Item Item, string SourceId, string Key, byte[]? Bytes, string? Skip, string? Error);
     /// <summary>
@@ -125,7 +126,12 @@ public static class RunCommand
 
     private static List<Item> UrlItems(IEnumerable<string> lines)
     {
-        var candidates = lines.Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')).Select(u => new Item(u, u, null));
+        // Upgrade first, so the dedupe below sees one source rather than one per spelling:
+        // a list carrying both a thumbnail URL and its master, or two size tokens for the
+        // same Amazon id, is one image and must be fetched and reported once. The upgraded
+        // URL rides on the item from here on, so nothing downstream re-applies the table.
+        var candidates = lines.Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#'))
+            .Select(u => new Item(u, SourceUpgrades.Apply(u), null));
 
         // Dedupe by canonical source id, keeping the first occurrence, so the same image
         // isn't fetched and normalised twice just because it appeared twice in the list. A
@@ -229,9 +235,9 @@ public static class RunCommand
                 return new Fetched(item, id, key, bytes, null, null);
             }
 
-            // Same rewrite the API applies, so a list of thumbnail URLs and a
-            // request for one of them land on the same key and the same bytes.
-            var url = SourceUpgrades.Apply(item.Url!);
+            // Already upgraded by UrlItems, which had to do it before it could
+            // dedupe spellings of one source.
+            var url = item.Url!;
 
             string sourceId;
             try { sourceId = SourceId.FromUrl(url); }

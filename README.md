@@ -41,7 +41,9 @@ same request, so a small per-host table rewrites the URL before it is fetched
 or keyed: an `m.media-amazon.com` size token (`._AC_SY445_.`) is dropped to
 reach the master, and an `assets.adidas.com` `w_500` path becomes `w_1200`.
 The rewrite keeps the host, so it never widens the allowlist, and an unknown
-host is left alone.
+host is left alone. Only the last Amazon token and the first adidas width
+segment are touched, and a URL list is upgraded before it is deduped, so two
+spellings of one source are fetched and reported once.
 
 | Route | Purpose |
 |---|---|
