@@ -170,9 +170,10 @@ Emitted for every image, success or failure. Stored beside the output as
 }
 ```
 
-`passthroughReason` is null unless `status` is `passthrough`, where it is
-`already-normalised` (re-encoding could not change the bytes) or `editorial`
-(the verdict said this is not a pack shot and the recipe said passthrough).
+`passthroughReason` is null unless `status` is `passthrough`, where it is one
+of `already-normalised` (re-encoding could not change the bytes), `editorial`
+(the verdict said this is not a pack shot) or `framed` (a pack shot whose
+content already fills its frame).
 `ground.matchesBackground` says whether the sampled ground is within 40 of the
 recipe background — the same test the verdict and the canvas both use.
 
@@ -253,7 +254,15 @@ only when the ground is not the recipe's in the first place. The corner test
 gets slack for studio lighting gradients, which spread the corners a little on
 perfectly good pack shots.
 
-An editorial passthrough returns the retailer's original bytes and format,
+The `editorial` policy also covers the pack shot that needs nothing done to
+it. Content whose share before any trim reaches **0.90** already fills its
+frame — an on-model shot with a little air, a tight crop — and the canvas has
+nothing to add: carding it shrinks the garment and puts a wide margin around
+it. Under `passthrough` those come back with reason `framed`; under `card`
+they are carded like anything else. The verdict is checked first, so a scene
+that also fills its frame still says `editorial`.
+
+A passthrough of either kind returns the retailer's original bytes and format,
 which may be larger than a tile; formats a browser cannot show (tiff, heif) are
 carded instead, whatever the policy says.
 
@@ -615,6 +624,13 @@ is a later addition.
     the ground and the corners (0.3), lands at 0.3 and passes through rather
     than carding. It is returned untouched, so nothing is damaged; it just
     misses the canvas.
+- The 85% content share and the 0.90 fill rule both come from the 2 Sep live
+  run over 1,976 images: 636 of the 1,446 that were carded already filled 90%
+  or more of their frame before any trim, and carding those at 78% shrank the
+  product behind a wide margin. Only 68 of them touched two frame edges, so
+  edge contact was never the signal — fill is. 85% was chosen by eye from 78,
+  85 and 90 side by side; whether it holds across more brands is the thing to
+  watch once the framed passthrough rate is visible in production.
 - Azure subscription, resource group and the custom domain for the store.
 - Whether LASTLOOK's warm replica is worth its small monthly cost versus
   relying entirely on pre-warming at sync.

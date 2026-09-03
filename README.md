@@ -111,8 +111,12 @@ The verdict decides what happens: a model on a studio backdrop, a room or a
 rug in a lounge is not a pack shot, and shrinking one onto a white card makes
 a grey box floating on white — so under the default `editorial` policy it
 passes through untouched (`status: "passthrough"`, `passthroughReason:
-"editorial"`) and only `editorial: "card"` trims and cards it anyway. A pack
-shot photographed on its own grey ground cards on that grey, edge to edge.
+"editorial"`) and only `editorial: "card"` trims and cards it anyway. The same
+policy covers a pack shot that needs nothing done to it: content already
+filling 90% of its frame before any trim comes back untouched with
+`passthroughReason: "framed"`, because carding it would only shrink the product
+behind a margin. A pack shot photographed on its own grey ground cards on that
+grey, edge to edge.
 
 Editorial passthrough returns the retailer's original bytes and format, which
 may be larger than a tile; formats a browser cannot show (tiff, heif) are
