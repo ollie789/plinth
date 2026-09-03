@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace Plinth.Core;
 
 public sealed record SourceRecord(string Sha256, int Bytes, int Width, int Height, string Format, bool HadAlpha, int OrientationApplied);
-public sealed record GroundRecord(string Sampled, int CornerSpread, bool CornersAgree, bool MatchesBackground);
+public sealed record GroundRecord(string Sampled, int CornerSpread, bool CornersAgree, bool MatchesBackground, bool Balanced);
 public sealed record TrimRecord(int Left, int Top, int Width, int Height, bool Noop, double ContentShareBefore);
 public sealed record VerdictRecord(bool PackShot, double Confidence, IReadOnlyList<string> Reasons);
 public sealed record OutputRecord(int Width, int Height, int Bytes, string Format);
@@ -51,7 +51,7 @@ public sealed record ResultRecord(
         ?? throw new PlinthException("record JSON was null");
 
     public static SourceRecord EmptySource { get; } = new("", 0, 0, 0, "", false, 1);
-    public static GroundRecord EmptyGround { get; } = new("#000000", 0, false, false);
+    public static GroundRecord EmptyGround { get; } = new("#000000", 0, false, false, false);
     public static TrimRecord EmptyTrim { get; } = new(0, 0, 0, 0, true, 0);
     public static VerdictRecord EmptyVerdict { get; } = new(false, 0, []);
 

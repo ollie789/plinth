@@ -51,12 +51,19 @@ public static class Renderer
 
     /// <summary>
     /// <paramref name="canvasBackground"/> is the colour the card is made of:
-    /// it flattens any transparency and fills the canvas around the content.
-    /// The caller chooses it, because a pack shot photographed on its own grey
-    /// ground has to card on that grey — edge to edge, with no seam — while
-    /// everything shot on the recipe's ground cards on the recipe background.
+    /// it fills the canvas around the content. The caller chooses it, because a
+    /// pack shot photographed on its own grey ground has to card on that grey —
+    /// edge to edge, with no seam — while everything shot on the recipe's
+    /// ground cards on the recipe background.
+    /// <para>
+    /// <paramref name="groundScale"/>, when given, is a per-channel multiplier
+    /// applied to the decoded image before the crop, so the ground the image
+    /// was shot on lands exactly on the canvas colour. The caller decides
+    /// whether to balance and by how much; the renderer only applies it.
+    /// </para>
     /// </summary>
-    public static Rendered Render(byte[] source, SourceInfo info, Measurement m, Recipe recipe, Rgb canvasBackground)
+    public static Rendered Render(byte[] source, SourceInfo info, Measurement m, Recipe recipe, Rgb canvasBackground,
+        double[]? groundScale = null)
     {
         Engine.Init();
         var (fullW, fullH) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
@@ -81,7 +88,23 @@ public static class Renderer
             // img may name an already-disposed image and the intermediate is left
             // to the finaliser; NetVips images are SafeHandles, so the redundant
             // Dispose in the finally is harmless.
-            img = Measurer.MakeOpaqueSrgb(img, canvasBackground);
+            // A balanced image flattens onto the ground it is about to be
+            // balanced away from, not onto the canvas colour: the scale maps the
+            // sampled ground onto the canvas, so flattening there first would
+            // leave a transparent region scaled off the background instead of
+            // landing on it.
+            img = Measurer.MakeOpaqueSrgb(img, groundScale is null ? canvasBackground : m.Ground.Sampled);
+
+            if (groundScale is not null)
+            {
+                // Before the crop, so the ground inside the trimmed box goes
+                // with it. Casting back to uchar clips at 255, which is what
+                // takes the ground the last step to the canvas colour.
+                var balanced = (img * groundScale).Cast(Enums.BandFormat.Uchar);
+                img.Dispose();
+                img = balanced;
+            }
+
             var decodeW = img.Width;
             var decodeH = img.Height;
 

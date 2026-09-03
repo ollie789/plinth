@@ -144,12 +144,136 @@ public class NormalizerTests
     }
 
     [Fact]
+    public void A_tinted_ground_is_balanced_onto_white_so_no_box_survives_the_trim()
+    {
+        // #ededed is 18 from white: close enough to card on white, and today
+        // that leaves the trimmed box carrying its tint into the tile. Two
+        // squares at opposite corners make a bounding box that still contains
+        // ground, which is the only way the tint reaches the card at all.
+        var recipe = Recipe.Default with { Format = "png" };
+        var r = Normalizer.Normalize(
+            Synthetic.DiagonalPackShot(800, 1000, Rgb.Parse("#ededed"), 200, 300, 300, 400, 100, Rgb.Parse("#4060a0")),
+            recipe);
+
+        Assert.Equal("ok", r.Status);
+        Assert.True(r.Record.Verdict.PackShot);
+        Assert.Equal("#ededed", r.Record.Ground.Sampled);
+        Assert.True(r.Record.Ground.MatchesBackground);
+        Assert.True(r.Record.Ground.Balanced);
+
+        using var img = Image.NewFromBuffer(r.Output!);
+        // The canvas the content was extended onto...
+        AssertPixel(img, 2, 2, [255, 255, 255], 1);
+        AssertPixel(img, 40, 40, [255, 255, 255], 1);
+        // ...and the ground that came through the trim inside the content, which
+        // is the rectangle this rule exists to remove. The gap between the two
+        // squares lands on the middle of the tile.
+        AssertPixel(img, 500, 625, [255, 255, 255], 1);
+
+        // The product brightens by the same factor the backdrop did.
+        var scale = 255 / 237.0;
+        AssertPixel(img, 234, 227, [Math.Round(0x40 * scale), Math.Round(0x60 * scale), Math.Round(0xa0 * scale)], 2);
+    }
+
+    [Fact]
+    public void A_ground_that_already_is_the_background_is_left_alone()
+    {
+        var r = Normalizer.Normalize(Shot(), Recipe.Default);
+        Assert.Equal("#ffffff", r.Record.Ground.Sampled);
+        Assert.False(r.Record.Ground.Balanced);
+    }
+
+    [Fact]
+    public void Balancing_aims_at_whatever_background_the_recipe_asks_for()
+    {
+        var recipe = Recipe.Default with { Format = "png", Background = Rgb.Parse("#fafafa") };
+        var r = Normalizer.Normalize(
+            Synthetic.DiagonalPackShot(800, 1000, Rgb.Parse("#ededed"), 200, 300, 300, 400, 100, Rgb.Parse("#4060a0")),
+            recipe);
+
+        Assert.Equal("ok", r.Status);
+        Assert.True(r.Record.Ground.Balanced);
+        using var img = Image.NewFromBuffer(r.Output!);
+        AssertPixel(img, 2, 2, [0xfa, 0xfa, 0xfa], 1);
+        // The ground inside the trim lands on the recipe background, not white.
+        AssertPixel(img, 500, 625, [0xfa, 0xfa, 0xfa], 1);
+    }
+
+    [Fact]
+    public void Balancing_can_darken_a_ground_onto_a_dimmer_background()
+    {
+        // The other direction: a white ground against an off-white background
+        // scales by 250/255, under 1, and comes down onto the background.
+        var recipe = Recipe.Default with { Format = "png", Background = Rgb.Parse("#fafafa") };
+        var r = Normalizer.Normalize(
+            Synthetic.DiagonalPackShot(800, 1000, White, 200, 300, 300, 400, 100, Rgb.Parse("#4060a0"), "png"),
+            recipe);
+
+        Assert.Equal("ok", r.Status);
+        Assert.Equal("#ffffff", r.Record.Ground.Sampled);
+        Assert.True(r.Record.Ground.Balanced);
+        using var img = Image.NewFromBuffer(r.Output!);
+        AssertPixel(img, 2, 2, [0xfa, 0xfa, 0xfa], 1);
+        // The ground that came through the trim is darker than it was.
+        AssertPixel(img, 500, 625, [0xfa, 0xfa, 0xfa], 1);
+    }
+
+    [Fact]
+    public void A_scale_no_tint_could_justify_is_refused_outright()
+    {
+        // #013232 is 40 from #293232 — inside the distance band — but the red
+        // channel would be multiplied by 41. Chebyshev distance bounds how far
+        // a channel moves, not the ratio it moves by, so the caps have to.
+        var recipe = Recipe.Default with { Format = "png", Background = Rgb.Parse("#293232") };
+        var r = Normalizer.Normalize(
+            Synthetic.DiagonalPackShot(800, 1000, Rgb.Parse("#013232"), 200, 300, 300, 400, 100, Rgb.Parse("#4060a0"), "png"),
+            recipe);
+
+        Assert.Equal("ok", r.Status);
+        Assert.Equal("#013232", r.Record.Ground.Sampled);
+        Assert.True(r.Record.Ground.MatchesBackground);
+        Assert.True(r.Record.Verdict.PackShot);
+        Assert.False(r.Record.Ground.Balanced);
+        // Left alone, it cards on the recipe background exactly as it did before.
+        using var img = Image.NewFromBuffer(r.Output!);
+        AssertPixel(img, 2, 2, [0x29, 0x32, 0x32], 1);
+    }
+
+    [Theory]
+    [InlineData("#fdfdfd", 2, false)]
+    [InlineData("#fcfcfc", 3, true)]
+    public void The_minimum_distance_is_a_closed_bound(string ground, int distance, bool balanced)
+    {
+        // At the bound the ground already is the background; one level past it,
+        // balancing starts. A lossless source keeps the sampled ground exact,
+        // so the boundary is the boundary and not a rounding artefact.
+        var r = Normalizer.Normalize(
+            Synthetic.DiagonalPackShot(800, 1000, Rgb.Parse(ground), 200, 300, 300, 400, 100, Black, "png"),
+            Recipe.Default with { Format = "png" });
+
+        Assert.Equal(ground, r.Record.Ground.Sampled);
+        Assert.Equal(distance, Rgb.Parse(ground).Distance(White));
+        Assert.Equal(2, Normalizer.GroundBalanceMinDistance);
+        Assert.Equal(balanced, r.Record.Ground.Balanced);
+    }
+
+    private static void AssertPixel(Image img, int x, int y, double[] expected, int tolerance)
+    {
+        var got = img.Getpoint(x, y);
+        for (var band = 0; band < expected.Length; band++)
+            Assert.InRange(got[band], expected[band] - tolerance, expected[band] + tolerance);
+    }
+
+    [Fact]
     public void A_pack_shot_on_a_grey_ground_is_carded_on_that_grey_not_on_white()
     {
         var r = Normalizer.Normalize(Synthetic.PackShot(800, 1000, Grey, 250, 300, 300, 400, Black), Recipe.Default);
         Assert.True(r.Record.Verdict.PackShot);
         Assert.Equal("ok", r.Status);
         Assert.False(r.Record.Ground.MatchesBackground);
+        // Too far from the background to be balanced towards it: it cards on
+        // its own ground instead, which is the existing rule.
+        Assert.False(r.Record.Ground.Balanced);
 
         using var img = Image.NewFromBuffer(r.Output!);
         var corner = img.Getpoint(2, 2);
