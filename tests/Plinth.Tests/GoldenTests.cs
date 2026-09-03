@@ -50,10 +50,16 @@ public class GoldenTests
             // freezes what the renderer makes of it, so those are re-run with
             // the card policy.
             var byPolicy = Normalizer.Normalize(bytes, Recipe.Default, "https://fixture/" + name);
-            if (!byPolicy.Record.Verdict.PackShot) Assert.Equal("editorial", byPolicy.Record.PassthroughReason);
-            var r = byPolicy.Record.PassthroughReason == "editorial"
-                ? Normalizer.Normalize(bytes, Recipe.Default with { Editorial = "card" }, "https://fixture/" + name)
-                : byPolicy;
+            var reason = byPolicy.Record.PassthroughReason;
+            if (!byPolicy.Record.Verdict.PackShot) Assert.Equal("editorial", reason);
+            else if (byPolicy.Record.Trim.ContentShareBefore >= Normalizer.FramedFill) Assert.Equal("framed", reason);
+            else Assert.Null(reason);
+            // Only "already-normalised" describes bytes that are already a tile;
+            // every other reason means the source was returned instead of one, so
+            // the golden re-runs it under the card policy to keep a rendered
+            // record of what the pipeline makes of that fixture.
+            var r = reason is null or "already-normalised" ? byPolicy
+                : Normalizer.Normalize(bytes, Recipe.Default with { Editorial = "card" }, "https://fixture/" + name);
             Assert.Equal("ok", r.Status);
             var actual = new Golden(r.Record.Trim, r.Record.Ground.Sampled, r.Record.Verdict.PackShot,
                 r.Record.Output!, PerceptualHash.ToHex(PerceptualHash.DHash(r.Output!)));
@@ -163,7 +169,13 @@ public class GoldenTests
     [Fact]
     public void A_flat_source_skips_the_crop_and_fills_the_canvas()
     {
-        var r = Normalizer.Normalize(Synthetic.Flat(800, 1000, White), Recipe.Default with { Format = "png" });
+        var flat = Synthetic.Flat(800, 1000, White);
+        // A flat image fills its own frame, so the default policy hands it back
+        // rather than carding a colour onto the same colour. The card policy is
+        // what exercises the no-op trim through the renderer.
+        Assert.Equal("framed", Normalizer.Normalize(flat, Recipe.Default).Record.PassthroughReason);
+
+        var r = Normalizer.Normalize(flat, Recipe.Default with { Format = "png", Editorial = "card" });
         Assert.Equal("ok", r.Status);
         Assert.True(r.Record.Trim.Noop);
         Assert.Equal((1000, 1250), (r.Record.Output!.Width, r.Record.Output.Height));

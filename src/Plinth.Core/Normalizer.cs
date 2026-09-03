@@ -12,6 +12,14 @@ public sealed record NormalizeResult(string Status, byte[]? Output, ResultRecord
 /// </summary>
 public static class Normalizer
 {
+    /// <summary>
+    /// Content already fills the frame; nothing to normalise. A source whose
+    /// content share reaches this before any trim gains nothing from the
+    /// canvas — carding it only shrinks the product and adds a margin — so it
+    /// is handed back untouched unless the recipe asks for a card.
+    /// </summary>
+    public const double FramedFill = 0.90;
+
     public static NormalizeResult Normalize(byte[] source, Recipe recipe, string? sourceId = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -64,13 +72,21 @@ public static class Normalizer
                     new OutputRecord(info.Width, info.Height, source.Length, info.Format),
                     new TimingsRecord(tInspect, tMeasure, 0, 0, 0, total.ElapsedMilliseconds)));
 
-            // The verdict now decides. A scene shrunk onto a white card is worse
-            // than the scene untouched, so unless the recipe asks for a card the
-            // editorial image is handed back exactly as it arrived — but only
-            // when a browser could show those bytes; anything else is carded.
-            if (!v.PackShot && recipe.Editorial == "passthrough" && ImageFormats.IsBrowserSafe(info.Format))
-                return Passthrough("editorial");
+            // Handing back the source only works when a browser could show
+            // those bytes; anything else is carded whatever the policy says.
+            var mayReturnSource = recipe.Editorial == "passthrough" && ImageFormats.IsBrowserSafe(info.Format);
+
+            // The verdict decides first. A scene shrunk onto a white card is
+            // worse than the scene untouched, so an editorial image is handed
+            // back exactly as it arrived.
+            if (mayReturnSource && !v.PackShot) return Passthrough("editorial");
+            // Then the narrower reason, where re-encoding could not change the
+            // bytes in any way that matters.
             if (IsPassthrough(info, m, recipe)) return Passthrough("already-normalised");
+            // Then the pack shot that is already framed: 636 of the 1,446 images
+            // carded in the live run filled 90% of the frame before any trim, and
+            // carding those shrank the garment behind a wide margin.
+            if (mayReturnSource && m.ContentShareBefore >= FramedFill) return Passthrough("framed");
 
             sw.Restart();
             // A pack shot whose ground already is the recipe background cards on
