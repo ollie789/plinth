@@ -337,7 +337,15 @@ It applies only when the image is a pack shot being carded, and only for a
 ground between `GroundBalanceMinDistance` (2) and
 `VerdictScorer.BackgroundTolerance` (40) from the background. Below 2 the
 ground already is the background; above 40 the image cards on its own ground
-and has nothing to be balanced towards. Passthroughs are untouched, and an
+and has nothing to be balanced towards.
+
+The distance is a Chebyshev distance, which bounds how far a channel *moves*
+but not the ratio it moves *by*: against a dark background, a ground channel
+near zero is 40 levels away and still a fortyfold multiplier. So the scales are
+capped as well — any channel outside `GroundBalanceMinScale` (0.80) to
+`GroundBalanceMaxScale` (1.25) and the image is not balanced at all. Balancing
+is a near-white technique and the caps are what say so; a ground the caps
+refuse cards on the background exactly as it did before. Passthroughs are untouched, and an
 alpha source flattens onto its sampled ground rather than the canvas colour, so
 a transparent region lands on the background once the scale is applied. The
 decision is the normaliser's: `Renderer` is handed the multiplier and applies
@@ -345,9 +353,9 @@ it, never deciding whether to.
 
 The trade-off is clipping. Anything already at or near the ground's brightness
 is pushed to the background and loses its separation — a white product on an
-off-white ground is the case to watch. The scale is small (at 40 levels, 1.19
-at most) and the products it fires on are separated from the ground by far more
-than the scale moves them, but a genuinely white-on-off-white product will lose
+off-white ground is the case to watch. The cap holds the scale to 1.25 at the
+very most, and the products it fires on are separated from the ground by far
+more than that moves them, but a genuinely white-on-off-white product will lose
 a little edge it used to have.
 
 The evidence is the full Click Frenzy run: of 16,477 carded images, 5,447 sat

@@ -199,6 +199,64 @@ public class NormalizerTests
         AssertPixel(img, 500, 625, [0xfa, 0xfa, 0xfa], 1);
     }
 
+    [Fact]
+    public void Balancing_can_darken_a_ground_onto_a_dimmer_background()
+    {
+        // The other direction: a white ground against an off-white background
+        // scales by 250/255, under 1, and comes down onto the background.
+        var recipe = Recipe.Default with { Format = "png", Background = Rgb.Parse("#fafafa") };
+        var r = Normalizer.Normalize(
+            Synthetic.DiagonalPackShot(800, 1000, White, 200, 300, 300, 400, 100, Rgb.Parse("#4060a0"), "png"),
+            recipe);
+
+        Assert.Equal("ok", r.Status);
+        Assert.Equal("#ffffff", r.Record.Ground.Sampled);
+        Assert.True(r.Record.Ground.Balanced);
+        using var img = Image.NewFromBuffer(r.Output!);
+        AssertPixel(img, 2, 2, [0xfa, 0xfa, 0xfa], 1);
+        // The ground that came through the trim is darker than it was.
+        AssertPixel(img, 500, 625, [0xfa, 0xfa, 0xfa], 1);
+    }
+
+    [Fact]
+    public void A_scale_no_tint_could_justify_is_refused_outright()
+    {
+        // #013232 is 40 from #293232 — inside the distance band — but the red
+        // channel would be multiplied by 41. Chebyshev distance bounds how far
+        // a channel moves, not the ratio it moves by, so the caps have to.
+        var recipe = Recipe.Default with { Format = "png", Background = Rgb.Parse("#293232") };
+        var r = Normalizer.Normalize(
+            Synthetic.DiagonalPackShot(800, 1000, Rgb.Parse("#013232"), 200, 300, 300, 400, 100, Rgb.Parse("#4060a0"), "png"),
+            recipe);
+
+        Assert.Equal("ok", r.Status);
+        Assert.Equal("#013232", r.Record.Ground.Sampled);
+        Assert.True(r.Record.Ground.MatchesBackground);
+        Assert.True(r.Record.Verdict.PackShot);
+        Assert.False(r.Record.Ground.Balanced);
+        // Left alone, it cards on the recipe background exactly as it did before.
+        using var img = Image.NewFromBuffer(r.Output!);
+        AssertPixel(img, 2, 2, [0x29, 0x32, 0x32], 1);
+    }
+
+    [Theory]
+    [InlineData("#fdfdfd", 2, false)]
+    [InlineData("#fcfcfc", 3, true)]
+    public void The_minimum_distance_is_a_closed_bound(string ground, int distance, bool balanced)
+    {
+        // At the bound the ground already is the background; one level past it,
+        // balancing starts. A lossless source keeps the sampled ground exact,
+        // so the boundary is the boundary and not a rounding artefact.
+        var r = Normalizer.Normalize(
+            Synthetic.DiagonalPackShot(800, 1000, Rgb.Parse(ground), 200, 300, 300, 400, 100, Black, "png"),
+            Recipe.Default with { Format = "png" });
+
+        Assert.Equal(ground, r.Record.Ground.Sampled);
+        Assert.Equal(distance, Rgb.Parse(ground).Distance(White));
+        Assert.Equal(2, Normalizer.GroundBalanceMinDistance);
+        Assert.Equal(balanced, r.Record.Ground.Balanced);
+    }
+
     private static void AssertPixel(Image img, int x, int y, double[] expected, int tolerance)
     {
         var got = img.Getpoint(x, y);

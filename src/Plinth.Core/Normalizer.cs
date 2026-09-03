@@ -28,6 +28,19 @@ public static class Normalizer
     /// </summary>
     public const int GroundBalanceMinDistance = 2;
 
+    /// <summary>
+    /// Balancing is a near-white technique, and these are the caps that say so.
+    /// The distance to the background is a Chebyshev distance, which bounds how
+    /// far a channel moves but not the ratio it moves by: against a dark
+    /// background a channel near zero is 40 levels away and still a fortyfold
+    /// multiplier. A scale outside this range is not a tint being corrected, so
+    /// the image is left alone and cards on the background as it always did.
+    /// </summary>
+    public const double GroundBalanceMinScale = 0.80;
+
+    /// <inheritdoc cref="GroundBalanceMinScale"/>
+    public const double GroundBalanceMaxScale = 1.25;
+
     public static NormalizeResult Normalize(byte[] source, Recipe recipe, string? sourceId = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -136,7 +149,9 @@ public static class Normalizer
     /// Only for a pack shot on a ground the card is being made of: a ground
     /// beyond <see cref="VerdictScorer.BackgroundTolerance"/> cards on itself
     /// and has nothing to be balanced towards, and one within
-    /// <see cref="GroundBalanceMinDistance"/> is already there.
+    /// <see cref="GroundBalanceMinDistance"/> is already there. A scale outside
+    /// <see cref="GroundBalanceMinScale"/>..<see cref="GroundBalanceMaxScale"/>
+    /// on any channel is refused outright.
     /// </para>
     /// </summary>
     private static double[]? GroundScaleFor(Verdict v, Measurement m, Recipe recipe)
@@ -147,7 +162,8 @@ public static class Normalizer
         if (distance <= GroundBalanceMinDistance || distance > VerdictScorer.BackgroundTolerance) return null;
 
         var background = recipe.Background;
-        return [Ratio(background.R, sampled.R), Ratio(background.G, sampled.G), Ratio(background.B, sampled.B)];
+        double[] scale = [Ratio(background.R, sampled.R), Ratio(background.G, sampled.G), Ratio(background.B, sampled.B)];
+        return Array.Exists(scale, c => c < GroundBalanceMinScale || c > GroundBalanceMaxScale) ? null : scale;
 
         // A black channel carries no ratio to scale by; leaving it alone is the
         // only answer that cannot blow up.
