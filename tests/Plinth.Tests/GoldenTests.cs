@@ -125,7 +125,7 @@ public class GoldenTests
         Assert.True(t[3] > t[2], $"content {t[2]}x{t[3]} is not taller than wide");
         Assert.InRange(t[2] / (double)t[3], m.Box.Width / (double)m.Box.Height - 0.03,
             m.Box.Width / (double)m.Box.Height + 0.03);
-        Assert.InRange(t[3], 960, 980);
+        Assert.InRange(t[3], 1045, 1060);
         Assert.InRange(t[0] + t[2] / 2.0, 490, 510);
         Assert.InRange(t[1] + t[3] / 2.0, 615, 635);
     }

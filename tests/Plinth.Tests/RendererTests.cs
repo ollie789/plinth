@@ -26,11 +26,11 @@ public class RendererTests
         using var img = Image.NewFromBuffer(r.Bytes);
         var raw = img.FindTrim(threshold: 12, background: [255, 255, 255]);
         var t = raw.Select(Convert.ToInt32).ToArray();
-        // 300x400 box scaled to fit 780x975: limited by height -> 731x975
-        Assert.InRange(t[3], 968, 978);
-        Assert.InRange(t[2], 724, 740);
-        Assert.InRange(t[0], 128, 142);
-        Assert.InRange(t[1], 132, 144);
+        // 300x400 box scaled to fit 850x1062: limited by height -> 797x1062
+        Assert.InRange(t[3], 1048, 1058);
+        Assert.InRange(t[2], 784, 800);
+        Assert.InRange(t[0], 97, 110);
+        Assert.InRange(t[1], 93, 105);
     }
 
     [Fact]
@@ -47,9 +47,9 @@ public class RendererTests
         var info = new SourceInfo("jpeg", 4000, 5000, false, 1, 1);
         var m = new Measurement(new GroundInfo(White, 0, true), new Box(1000, 1000, 2000, 2500), false, 0.5, 410, 512);
         var (w, h) = Renderer.DecodeSizeFor(info, m, Recipe.Default);
-        // box must reach 780x975: scale 0.39 -> 1560x1950 (+1 slack)
-        Assert.InRange(w, 1560, 1562);
-        Assert.InRange(h, 1950, 1952);
+        // box must reach 850x1062: scale 0.425 -> 1700x2125 (+1 slack)
+        Assert.InRange(w, 1700, 1702);
+        Assert.InRange(h, 2125, 2127);
         var small = new SourceInfo("jpeg", 400, 500, false, 1, 1);
         var ms = new Measurement(new GroundInfo(White, 0, true), new Box(100, 100, 200, 250), false, 0.5, 400, 500);
         Assert.Equal((401, 501), Renderer.DecodeSizeFor(small, ms, Recipe.Default));

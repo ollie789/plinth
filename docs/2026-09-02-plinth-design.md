@@ -102,7 +102,7 @@ The small set of choices that define an output. Defaults are today's engine.
 |---|---|---|
 | `aspect` | `4:5` | Output canvas ratio |
 | `width` | `1000` | Canvas width in px; height follows aspect |
-| `contentShare` | `0.78` | The trimmed product is fitted inside a box that is this share of the canvas on both axes |
+| `contentShare` | `0.85` | The trimmed product is fitted inside a box that is this share of the canvas on both axes (850×1062 on the default canvas) |
 | `upscale` | `true` | Allow enlarging small sources to reach the content box (today's behaviour) |
 | `background` | `#ffffff` | Canvas ground, also the flatten colour for transparency |
 | `trimThreshold` | `12` | Max distance from the sampled ground for a pixel to count as ground |
@@ -155,7 +155,7 @@ Emitted for every image, success or failure. Stored beside the output as
 ```json
 {
   "key": "…",
-  "engineVersion": "1.1",
+  "engineVersion": "1.2",
   "libvipsVersion": "8.18.6",
   "recipeHash": "…",
   "source": { "sha256": "…", "bytes": 184233, "width": 1600, "height": 2000, "format": "jpeg", "hadAlpha": false, "orientationApplied": 1 },
@@ -264,8 +264,9 @@ and their corner spreads 52, 58 and 72 against 0, 0 and 0.
 
 ### 5.5 Canvas and encode
 
-- Scale the trimmed content to fit the content box (`contentShare` of the
-  canvas on both axes), enlarging if `upscale` allows.
+- Scale the trimmed content to fit the content box — `contentShare` of the
+  canvas on both axes, 85% or 850×1062 by default — enlarging if `upscale`
+  allows.
 - Composite centred at the recipe size on the recipe background — or, for a
   pack shot whose sampled ground is more than 40 from it, on that sampled
   ground, so a product photographed on its own grey cards edge to edge with no
@@ -482,7 +483,7 @@ regresses by more than 20%.
   the decoder for near-zero cost. The measure pass always uses the smallest
   factor that leaves the long side ≥ 512 px. The final pass picks the largest
   factor that still leaves the trimmed content at or above the content box
-  (780 px on a 1000 px canvas), so a 4000 px source is decoded at 1000 px,
+  (850 px on a 1000 px canvas), so a 4000 px source is decoded at 1000 px,
   never at full size. Decode cost scales with pixels; this is the single
   biggest saving.
 - **Crop before scale.** The trim box is applied on the shrunk decode, and

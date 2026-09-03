@@ -205,8 +205,8 @@ public class NormalizerTests
     public void A_contentShare_beyond_four_decimals_is_rounded_at_the_boundary()
     {
         var bytes = Shot();
-        var a = Normalizer.Normalize(bytes, Recipe.Default with { ContentShare = 0.780005 }, "https://a/b.jpg");
-        var b = Normalizer.Normalize(bytes, Recipe.Default with { ContentShare = 0.78 }, "https://a/b.jpg");
+        var a = Normalizer.Normalize(bytes, Recipe.Default with { ContentShare = 0.850005 }, "https://a/b.jpg");
+        var b = Normalizer.Normalize(bytes, Recipe.Default with { ContentShare = 0.85 }, "https://a/b.jpg");
         Assert.Equal("ok", a.Status);
         Assert.Equal(b.Record.RecipeHash, a.Record.RecipeHash);
         Assert.Equal(b.Record.Key, a.Record.Key);

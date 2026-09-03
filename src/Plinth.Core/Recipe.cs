@@ -10,7 +10,7 @@ public sealed record Recipe
 {
     public string Aspect { get; init; } = "4:5";
     public int Width { get; init; } = 1000;
-    public double ContentShare { get; init; } = 0.78;
+    public double ContentShare { get; init; } = 0.85;
     public Rgb Background { get; init; } = Rgb.Parse("#ffffff");
     public int TrimThreshold { get; init; } = 12;
     public string Format { get; init; } = "webp";
