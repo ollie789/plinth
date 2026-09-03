@@ -20,6 +20,14 @@ public static class Normalizer
     /// </summary>
     public const double FramedFill = 0.90;
 
+    /// <summary>
+    /// A ground this close to the recipe background is already the background;
+    /// balancing it would be arithmetic with no visible effect. Above it, and
+    /// up to <see cref="VerdictScorer.BackgroundTolerance"/>, the ground is
+    /// scaled onto the background before the card is made.
+    /// </summary>
+    public const int GroundBalanceMinDistance = 2;
+
     public static NormalizeResult Normalize(byte[] source, Recipe recipe, string? sourceId = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -61,7 +69,7 @@ public static class Normalizer
             ct.ThrowIfCancellationRequested();
             tMeasure = sw.ElapsedMilliseconds;
             ground = new GroundRecord(m.Ground.Sampled.ToHex(), m.Ground.CornerSpread, m.Ground.CornersAgree,
-                VerdictScorer.MatchesBackground(m.Ground.Sampled, recipe));
+                VerdictScorer.MatchesBackground(m.Ground.Sampled, recipe), Balanced: false);
             trim = new TrimRecord(m.Box.Left, m.Box.Top, m.Box.Width, m.Box.Height, m.TrimIsNoop, Math.Round(m.ContentShareBefore, 4));
             var v = VerdictScorer.Score(m, info, recipe);
             verdict = new VerdictRecord(v.PackShot, v.Confidence, v.Reasons);
@@ -93,7 +101,9 @@ public static class Normalizer
             // it; one shot on its own grey cards on that grey, so the extended
             // canvas is seamless rather than a grey box floated on white.
             var canvasBackground = ground.MatchesBackground ? recipe.Background : m.Ground.Sampled;
-            var rendered = Renderer.Render(source, info, m, recipe, canvasBackground);
+            var groundScale = GroundScaleFor(v, m, recipe);
+            if (groundScale is not null) ground = ground with { Balanced = true };
+            var rendered = Renderer.Render(source, info, m, recipe, canvasBackground, groundScale);
             tRender = sw.ElapsedMilliseconds;
 
             var output = new OutputRecord(rendered.Info.Width, rendered.Info.Height, rendered.Info.Bytes, rendered.Info.Format);
@@ -109,6 +119,39 @@ public static class Normalizer
                 new TimingsRecord(tInspect, tMeasure, 0, tRender, 0, total.ElapsedMilliseconds));
             return new NormalizeResult("failed", null, record);
         }
+    }
+
+    /// <summary>
+    /// The per-channel multiplier that maps the sampled ground onto the recipe
+    /// background, or null to leave the image alone.
+    /// <para>
+    /// Off-white studio grounds — #f0f0f0, #ededed, #e1e1e1 — are close enough
+    /// to white to card on it, but the trimmed box carries that tint with it,
+    /// so the tile shows a hard-edged tinted rectangle around the product's
+    /// silhouette. Scaling each channel so the ground lands exactly on the
+    /// background removes the rectangle; shadows survive, because they scale by
+    /// the same factor the backdrop does.
+    /// </para>
+    /// <para>
+    /// Only for a pack shot on a ground the card is being made of: a ground
+    /// beyond <see cref="VerdictScorer.BackgroundTolerance"/> cards on itself
+    /// and has nothing to be balanced towards, and one within
+    /// <see cref="GroundBalanceMinDistance"/> is already there.
+    /// </para>
+    /// </summary>
+    private static double[]? GroundScaleFor(Verdict v, Measurement m, Recipe recipe)
+    {
+        if (!v.PackShot) return null;
+        var sampled = m.Ground.Sampled;
+        var distance = sampled.Distance(recipe.Background);
+        if (distance <= GroundBalanceMinDistance || distance > VerdictScorer.BackgroundTolerance) return null;
+
+        var background = recipe.Background;
+        return [Ratio(background.R, sampled.R), Ratio(background.G, sampled.G), Ratio(background.B, sampled.B)];
+
+        // A black channel carries no ratio to scale by; leaving it alone is the
+        // only answer that cannot blow up.
+        static double Ratio(byte background, byte ground) => ground == 0 ? 1 : background / (double)ground;
     }
 
     /// <summary>

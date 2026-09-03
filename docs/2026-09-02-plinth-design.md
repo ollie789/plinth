@@ -155,11 +155,11 @@ Emitted for every image, success or failure. Stored beside the output as
 ```json
 {
   "key": "…",
-  "engineVersion": "1.3",
+  "engineVersion": "1.4",
   "libvipsVersion": "8.18.6",
   "recipeHash": "…",
   "source": { "sha256": "…", "bytes": 184233, "width": 1600, "height": 2000, "format": "jpeg", "hadAlpha": false, "orientationApplied": 1 },
-  "ground": { "sampled": "#fefefe", "cornerSpread": 2, "cornersAgree": true, "matchesBackground": true },
+  "ground": { "sampled": "#fefefe", "cornerSpread": 2, "cornersAgree": true, "matchesBackground": true, "balanced": false },
   "trim": { "left": 310, "top": 120, "width": 980, "height": 1690, "contentShareBefore": 0.61 },
   "verdict": { "packShot": true, "confidence": 0.93, "reasons": [] },
   "output": { "width": 1000, "height": 1250, "bytes": 61240, "format": "webp" },
@@ -175,7 +175,9 @@ of `already-normalised` (re-encoding could not change the bytes), `editorial`
 (the verdict said this is not a pack shot) or `framed` (a pack shot whose
 content already fills its frame).
 `ground.matchesBackground` says whether the sampled ground is within 40 of the
-recipe background — the same test the verdict and the canvas both use.
+recipe background — the same test the verdict and the canvas both use — and
+`ground.balanced` says whether the ground was scaled onto that background
+before the card was made (5.5).
 
 `decode` and `encode` are reported as 0 until the pipeline is split into
 separately timed stages; today decoding and encoding both happen inside
@@ -319,6 +321,39 @@ and their corner spreads 52, 58 and 72 against 0, 0 and 0.
   seam instead of becoming a grey box floated on white.
 - Encode per recipe. Output is unchanged by the caller's viewport; resizing
   is the CDN's job.
+
+**Ground balance.** A pack shot on a ground *near* the recipe background is
+carded on the background, but the trimmed box carries the ground with it: a
+product's silhouette never fills its own bounding box, so the tile shows a
+hard-edged tinted rectangle on a clean card — worse than the untouched
+original. Before the crop, every channel of the decoded image is multiplied by
+`background[c] / ground[c]` (a ground channel of 0 scales by 1), so the sampled
+ground lands exactly on the background and the rectangle disappears. The
+`uchar` cast afterwards clips at 255, which takes the ground the last step
+home. Shadows survive: they scale by the same factor the backdrop does. The
+product brightens by that factor too — 5–8% for the grounds this fires on.
+
+It applies only when the image is a pack shot being carded, and only for a
+ground between `GroundBalanceMinDistance` (2) and
+`VerdictScorer.BackgroundTolerance` (40) from the background. Below 2 the
+ground already is the background; above 40 the image cards on its own ground
+and has nothing to be balanced towards. Passthroughs are untouched, and an
+alpha source flattens onto its sampled ground rather than the canvas colour, so
+a transparent region lands on the background once the scale is applied. The
+decision is the normaliser's: `Renderer` is handed the multiplier and applies
+it, never deciding whether to.
+
+The trade-off is clipping. Anything already at or near the ground's brightness
+is pushed to the background and loses its separation — a white product on an
+off-white ground is the case to watch. The scale is small (at 40 levels, 1.19
+at most) and the products it fires on are separated from the ground by far more
+than the scale moves them, but a genuinely white-on-off-white product will lose
+a little edge it used to have.
+
+The evidence is the full Click Frenzy run: of 16,477 carded images, 5,447 sat
+on an off-white ground 3–40 below white — `#f0f0f0`, `#ededed`, `#e1e1e1`.
+Verified by eye on New Balance (`#edeef2`), Nike (`#ededed`) and Asics
+(`#f4eff0`): the rectangle goes, the shadows stay.
 
 ### 5.6 Failure posture
 
@@ -661,6 +696,13 @@ is a later addition.
     the ground and the corners (0.3), lands at 0.3 and passes through rather
     than carding. It is returned untouched, so nothing is damaged; it just
     misses the canvas.
+- Ground balance is fitted to one population of studio backdrops. It assumes
+  the tint is a flat multiplicative cast, which is what a lit white cyclorama
+  gives; a ground with a colour *gradient* across the frame balances only at
+  the corners the ground was sampled from, and a deliberately coloured backdrop
+  inside 40 levels of white would be balanced away rather than kept. The
+  clipping trade-off for white-on-off-white products above is the other thing
+  to watch once the balanced rate is visible in production.
 - The 85% content share and the 0.90 fill rule both come from the 2 Sep live
   run over 1,976 images: 636 of the 1,446 that were carded already filled 90%
   or more of their frame before any trim, and carding those at 78% shrank the

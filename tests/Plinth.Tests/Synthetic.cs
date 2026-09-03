@@ -23,6 +23,30 @@ public static class Synthetic
         };
     }
 
+    /// <summary>
+    /// Two squares at opposite corners of the box, so the trimmed bounding box
+    /// still contains ground between them — the shape of a real product, whose
+    /// silhouette never fills its own bounding box, and the only way a tinted
+    /// ground survives the trim into the tile.
+    /// </summary>
+    public static byte[] DiagonalPackShot(int w, int h, Rgb ground, int boxLeft, int boxTop, int boxW, int boxH,
+        int part, Rgb boxColour, string format = "jpeg", int quality = 92)
+    {
+        using var bg = Image.Black(w, h, bands: 3) + ground.ToVips();
+        using var part1 = Image.Black(part, part, bands: 3) + boxColour.ToVips();
+        using var part2 = Image.Black(part, part, bands: 3) + boxColour.ToVips();
+        using var withFirst = bg.Insert(part1, boxLeft, boxTop);
+        using var img = withFirst.Insert(part2, boxLeft + boxW - part, boxTop + boxH - part)
+            .Cast(Enums.BandFormat.Uchar).Copy(interpretation: Enums.Interpretation.Srgb);
+        return format switch
+        {
+            "jpeg" => img.JpegsaveBuffer(q: quality),
+            "png" => img.PngsaveBuffer(),
+            "webp" => img.WebpsaveBuffer(q: quality),
+            _ => throw new ArgumentException(format),
+        };
+    }
+
     /// <summary>A box on a fully transparent ground, as PNG.</summary>
     public static byte[] TransparentPackShot(int w, int h, int boxLeft, int boxTop, int boxW, int boxH, Rgb boxColour)
     {

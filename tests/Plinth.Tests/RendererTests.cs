@@ -79,6 +79,25 @@ public class RendererTests
     }
 
     [Fact]
+    public void The_renderer_applies_the_ground_scale_it_is_handed_and_decides_nothing()
+    {
+        var recipe = Recipe.Default with { Format = "png" };
+        var bytes = Synthetic.DiagonalPackShot(800, 1000, Rgb.Parse("#ededed"), 200, 300, 300, 400, 100, Black);
+        var info = SourceInspector.Inspect(bytes);
+        var m = Measurer.Measure(bytes, info, recipe);
+
+        // Handed no scale, the tint comes through the trim exactly as measured.
+        var plain = Renderer.Render(bytes, info, m, recipe, White);
+        using (var img = Image.NewFromBuffer(plain.Bytes))
+            Assert.InRange(img.Getpoint(500, 625)[0], 0xed - 2, 0xed + 2);
+
+        // Handed one, the same ground lands on the canvas colour.
+        var balanced = Renderer.Render(bytes, info, m, recipe, White, [255 / 237.0, 255 / 237.0, 255 / 237.0]);
+        using (var img = Image.NewFromBuffer(balanced.Bytes))
+            Assert.InRange(img.Getpoint(500, 625)[0], 254, 255);
+    }
+
+    [Fact]
     public void Png_recipe_encodes_png()
     {
         var r = RenderSynthetic(Recipe.Default with { Format = "png" });
