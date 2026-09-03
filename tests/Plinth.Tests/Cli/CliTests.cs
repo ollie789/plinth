@@ -60,6 +60,25 @@ public class CliTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_over_a_url_list_upgrades_thumbnail_urls_to_their_master()
+    {
+        const string master = "https://m.media-amazon.com/images/I/71abcDEF.jpg";
+        var fetcher = new FakeFetcher().With(master, Synthetic.PackShot(600, 800, White, 100, 100, 200, 300, Black));
+        var list = Path.Combine(_dir, "amazon.txt");
+        File.WriteAllLines(list, ["https://m.media-amazon.com/images/I/71abcDEF._AC_SY445_.jpg"]);
+        Environment.SetEnvironmentVariable("PLINTH_ALLOWED_HOSTS", "m.media-amazon.com");
+        try
+        {
+            var r = await Run(CliApp.Build(_ => fetcher), "run", "--input", list, "--output", _out);
+            Assert.Equal(0, r.Code);
+            Assert.Equal(1, Count(r.Lines, "ok"));
+            Assert.Equal(1, fetcher.Calls);
+            Assert.Equal(master, r.Lines[0].GetProperty("sourceId").GetString());
+        }
+        finally { Environment.SetEnvironmentVariable("PLINTH_ALLOWED_HOSTS", null); }
+    }
+
+    [Fact]
     public async Task Run_over_a_url_list_skips_by_key_without_fetching_and_refresh_refetches()
     {
         var fetcher = new FakeFetcher()

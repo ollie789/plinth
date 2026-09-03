@@ -36,6 +36,13 @@ hostnames, `https` only, and an empty (or unset) list refuses every fetch —
 there is no "allow all". `PLINTH_STORE` is `none` (pass-through, the
 default), `fs://<path>`, or `azblob://<container>`.
 
+Some feeds carry a thumbnail URL when the host will serve the master for the
+same request, so a small per-host table rewrites the URL before it is fetched
+or keyed: an `m.media-amazon.com` size token (`._AC_SY445_.`) is dropped to
+reach the master, and an `assets.adidas.com` `w_500` path becomes `w_1200`.
+The rewrite keeps the host, so it never widens the allowlist, and an unknown
+host is left alone.
+
 | Route | Purpose |
 |---|---|
 | `GET /v1/image?src=<url>[&recipe=<name>][&sig=<hmac>]` | The normalised image. `400` if `src` is missing or not on the allowlist, `403` on a bad signature; a failed normalise redirects to `src` (302, default) or returns `502` with the result record as JSON, per `PLINTH_ON_FAILURE`. |

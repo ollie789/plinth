@@ -202,6 +202,25 @@ Only the front doors fetch; Core takes bytes.
 - Caps: 12 MB body (checked on `Content-Length` and again on the read
   stream), 12 s timeout, a fixed User-Agent that names the tool.
 
+**Source upgrades.** Some feeds hand us a thumbnail when the same host will
+serve the master for the same request, so the URL is rewritten before anything
+else — before the fetch, and before the source id and the key are computed
+from it. A thumbnail and its master are different sources, not two spellings
+of one, so they must never share a tile; keying on the upgraded URL is what
+makes that true, and it also means the API and the CLI reach the same tile
+from either spelling.
+
+| Host | Rewrite | Evidence |
+|---|---|---|
+| `m.media-amazon.com` | Drop the size token before the extension: `/images/I/<id>._AC_SY445_.jpg` → `/images/I/<id>.jpg` | The feed carries thumbnails 154–679 px wide; the master is 500–2560 px, already padded on a square white canvas |
+| `assets.adidas.com` | `/w_500,` → `/w_1200,` in the path | The feed asks for `w_500`; the same path at `w_1200` returns 1200 px |
+
+The table lives in `SourceUpgrades`, is matched on exact hostname, and is pure
+— a rule is a claim about a host's URL scheme, never a probe. An unknown host
+or a non-matching URL comes back untouched, and an upgrade that turns out to
+404 fails the fetch like any other bad URL rather than silently falling back.
+The allowlist gate is unaffected: every rule keeps the host it matched.
+
 ### 5.2 Normalise
 
 - Apply EXIF orientation, then strip all metadata.

@@ -32,6 +32,30 @@ public class PlinthPipelineTests
     }
 
     [Fact]
+    public async Task A_thumbnail_url_is_upgraded_before_it_is_fetched_keyed_or_recorded()
+    {
+        const string thumb = "https://m.media-amazon.com/images/I/71abcDEF._AC_SY445_.jpg";
+        const string master = "https://m.media-amazon.com/images/I/71abcDEF.jpg";
+        // The fake only answers for the master, so a fetch of the thumbnail fails.
+        var fetcher = new FakeFetcher().With(master, Shot());
+        var p = new PlinthPipeline(fetcher, new MemoryStore(), RecipeCatalog.DefaultOnly);
+
+        var r = await p.ProcessUrlAsync(thumb, null);
+        Assert.Equal("ok", r.Status);
+        Assert.Equal(master, r.Record.SourceId);
+        Assert.Equal(OutputKey.Compute(SourceId.FromUrl(master), Recipe.Default), r.Record.Key);
+
+        // Asking for the master directly is the same request, so it is a store hit.
+        var again = await p.ProcessUrlAsync(master, null);
+        Assert.True(again.FromStore);
+        Assert.Equal(1, fetcher.Calls);
+
+        var inspected = await p.InspectUrlAsync(thumb, null);
+        Assert.True(inspected.FromStore);
+        Assert.Equal(master, inspected.Record.SourceId);
+    }
+
+    [Fact]
     public async Task Fetch_failures_and_bad_urls_become_failed_records_and_are_not_stored()
     {
         var store = new MemoryStore();

@@ -229,14 +229,18 @@ public static class RunCommand
                 return new Fetched(item, id, key, bytes, null, null);
             }
 
+            // Same rewrite the API applies, so a list of thumbnail URLs and a
+            // request for one of them land on the same key and the same bytes.
+            var url = SourceUpgrades.Apply(item.Url!);
+
             string sourceId;
-            try { sourceId = SourceId.FromUrl(item.Url!); }
-            catch (PlinthException e) { return new Fetched(item, item.Url!, OutputKey.Compute(item.Url!, recipe), null, null, e.Message); }
+            try { sourceId = SourceId.FromUrl(url); }
+            catch (PlinthException e) { return new Fetched(item, url, OutputKey.Compute(url, recipe), null, null, e.Message); }
             var urlKey = OutputKey.Compute(sourceId, recipe);
             if (!refresh && await store.ExistsAsync(urlKey, ct)) return new Fetched(item, sourceId, urlKey, null, "skipped", null);
 
             byte[] body;
-            try { body = (await fetcher.FetchAsync(item.Url!, ct)).Bytes; }
+            try { body = (await fetcher.FetchAsync(url, ct)).Bytes; }
             catch (PlinthException e) { return new Fetched(item, sourceId, urlKey, null, null, e.Message); }
 
             if (refresh)

@@ -24,6 +24,12 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
 
     private async Task<PipelineResult> FromUrlAsync(string url, string? recipeName, bool recordOnly, CancellationToken ct)
     {
+        // Before anything else, so the upgraded URL is what gets fetched, what
+        // the record calls its source and what the key is computed from: a
+        // thumbnail and its master are different sources, not two spellings of
+        // one, and must never share a tile.
+        url = SourceUpgrades.Apply(url);
+
         Recipe recipe;
         try { recipe = Recipes.Get(recipeName); }
         catch (PlinthException e) { return UnknownRecipeResult(url, recipeName, e.Message); }
