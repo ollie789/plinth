@@ -28,6 +28,7 @@ public class PipelineOptionsTests
         Assert.Equal("error", o.OnFailure);
         Assert.Equal(2, o.Concurrency);
         Assert.Equal(9, o.MaxInFlight);
+        Assert.Equal(20 * 1024 * 1024, o.Fetch.MaxBytes);
 
         var bare = PipelineOptions.FromEnvironment(_ => null);
         Assert.Empty(bare.Fetch.AllowedHosts);
@@ -41,9 +42,19 @@ public class PipelineOptionsTests
         Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_ON_FAILURE" ? "explode" : null));
         Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_INFLIGHT" ? "0" : null));
         Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_INFLIGHT" ? "lots" : null));
+        Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_BYTES" ? "0" : null));
+        Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_BYTES" ? "plenty" : null));
 
         var missing = Path.Combine(Path.GetTempPath(), "plinth-no-such-recipes-" + Guid.NewGuid().ToString("N") + ".json");
         var unreadable = Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_RECIPES" ? missing : null));
         Assert.Equal($"PLINTH_RECIPES: could not read {missing}", unreadable.Message);
+    }
+
+    [Fact]
+    public void The_fetch_cap_is_settable_per_deployment()
+    {
+        // A provider re-hosting 16 MB thumbnails should not require a release.
+        var o = PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_BYTES" ? "33554432" : null);
+        Assert.Equal(32 * 1024 * 1024, o.Fetch.MaxBytes);
     }
 }

@@ -151,8 +151,10 @@ shell history. Rotating it invalidates every URL in flight.
 
 ## Known open, as of 4 Sep 2026
 
-- **MaxBytes is 12 MB.** 21 catalogue images exceed it. Raising it to 20 MB
-  would recover them; the decision is unmade.
+- ~~MaxBytes is 12 MB.~~ Raised to 20 MB and made settable as
+  `PLINTH_MAX_BYTES`, so a provider shipping bigger thumbnails no longer needs
+  a release. It bounds memory as much as bandwidth — `PLINTH_MAX_INFLIGHT`
+  sources of this size can be in flight at once — so raise it deliberately.
 - **The consumer's tiles are 3:4, the canvas is 4:5.** Every tile loses about
   6% of its width to the crop. Wide items sit at 92% of the canvas, so they
   clear it by under a percent.
