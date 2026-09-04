@@ -120,6 +120,53 @@ public class NormalizerTests
     }
 
     [Fact]
+    public void A_wide_product_lying_across_its_frame_is_carded_not_passed_through()
+    {
+        // The frypan case. A 950x206 box in a 1000x1000 frame fills 95% of the
+        // width and 21% of the height. Measured on the wider axis alone it
+        // looks framed; it is a strip of product in a square of air, and
+        // handing it back leaves the consumer's tile to crop the handle off.
+        var strip = Synthetic.PackShot(1000, 1000, White, 25, 400, 950, 206, Black);
+        var r = Normalizer.Normalize(strip, Recipe.Default);
+        Assert.True(r.Record.Verdict.PackShot);
+        Assert.InRange(r.Record.Trim.ContentShareBefore, Normalizer.FramedFill, 1.0);
+        Assert.Equal("ok", r.Status);
+        Assert.Null(r.Record.PassthroughReason);
+        Assert.Equal((1000, 1250), (r.Record.Output!.Width, r.Record.Output.Height));
+    }
+
+    [Fact]
+    public void A_frame_wider_than_the_canvas_is_carded_however_full_it_is()
+    {
+        // The shoe case. A 2208x989 box in a 2400x1075 frame fills 92% of both
+        // axes, so the frame is the product's own — but it is 2.2 times wider
+        // than it is tall,
+        // and a 4:5 tile fitting that shows the middle third of the shoe.
+        // Carding puts the whole shoe on the canvas the tile expects.
+        var wide = Synthetic.PackShot(2400, 1075, White, 96, 43, 2208, 989, Black);
+        var r = Normalizer.Normalize(wide, Recipe.Default);
+        Assert.True(r.Record.Verdict.PackShot);
+        Assert.Equal("ok", r.Status);
+        Assert.Null(r.Record.PassthroughReason);
+        Assert.Equal((1000, 1250), (r.Record.Output!.Width, r.Record.Output.Height));
+    }
+
+    [Fact]
+    public void A_frame_taller_than_the_canvas_still_passes_through()
+    {
+        // The other side of the aspect bound, and the reason it is one-sided:
+        // a 2:3 portrait model shot loses a little off the top and bottom to
+        // the tile and stays legible. Carding it would shrink it behind a
+        // margin, which is the complaint the framed rule exists to answer.
+        var portrait = Synthetic.PackShot(800, 1200, White, 32, 48, 736, 1104, Black);
+        var r = Normalizer.Normalize(portrait, Recipe.Default);
+        Assert.True(r.Record.Verdict.PackShot);
+        Assert.Equal("passthrough", r.Status);
+        Assert.Equal("framed", r.Record.PassthroughReason);
+        Assert.Equal(portrait, r.Output);
+    }
+
+    [Fact]
     public void A_padded_pack_shot_is_still_carded()
     {
         // The same frame with a 300x400 box is 0.4 of it: air to remove, so the
