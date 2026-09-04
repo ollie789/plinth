@@ -36,6 +36,20 @@ public class GoldenTests
                      (b.Record with { TimingsMs = TimingsRecord.Zero }).ToJson());
     }
 
+    /// <summary>
+    /// Normalizer.IsFramed as the record sees it: full on both axes, in a
+    /// frame no wider than the canvas tolerates.
+    /// </summary>
+    private static bool FramedByRecord(ResultRecord r)
+    {
+        var (w, h) = r.Source.OrientationApplied is >= 5 and <= 8
+            ? (r.Source.Height, r.Source.Width)
+            : (r.Source.Width, r.Source.Height);
+        if (Math.Min(r.Trim.Width / (double)w, r.Trim.Height / (double)h) < Normalizer.FramedFill) return false;
+        var canvasAspect = Recipe.Default.CanvasWidth / (double)Recipe.Default.CanvasHeight;
+        return w / (double)h <= canvasAspect * (1 + Normalizer.FramedAspectSlack);
+    }
+
     [Fact]
     public void Every_fixture_matches_its_golden_record()
     {
@@ -52,7 +66,7 @@ public class GoldenTests
             var byPolicy = Normalizer.Normalize(bytes, Recipe.Default, "https://fixture/" + name);
             var reason = byPolicy.Record.PassthroughReason;
             if (!byPolicy.Record.Verdict.PackShot) Assert.Equal("editorial", reason);
-            else if (byPolicy.Record.Trim.ContentShareBefore >= Normalizer.FramedFill) Assert.Equal("framed", reason);
+            else if (FramedByRecord(byPolicy.Record)) Assert.Equal("framed", reason);
             else Assert.Null(reason);
             // Only "already-normalised" describes bytes that are already a tile;
             // every other reason means the source was returned instead of one, so

@@ -21,6 +21,24 @@ public static class Normalizer
     public const double FramedFill = 0.90;
 
     /// <summary>
+    /// How much wider than the canvas a framed source may be and still be
+    /// handed back untouched.
+    /// <para>
+    /// A consumer fits the tile it is given, and crops whatever does not fit.
+    /// A source at the canvas aspect survives that fit; one materially wider
+    /// loses its ends to it. A shoe shot 2.2 times wider than it is tall,
+    /// dropped into a 4:5 tile, shows its middle third and neither toe nor
+    /// heel — the frame was the product's own, and the crop took it anyway.
+    /// </para>
+    /// <para>
+    /// Only the wide side is bounded. A source TALLER than the canvas loses a
+    /// little off the top and bottom and stays legible, and bounding that side
+    /// too would card the portrait model shots this rule exists to protect.
+    /// </para>
+    /// </summary>
+    public const double FramedAspectSlack = 0.05;
+
+    /// <summary>
     /// A ground this close to the recipe background is already the background;
     /// balancing it would be arithmetic with no visible effect. Above it, and
     /// up to <see cref="VerdictScorer.BackgroundTolerance"/>, the ground is
@@ -104,10 +122,11 @@ public static class Normalizer
             // Then the narrower reason, where re-encoding could not change the
             // bytes in any way that matters.
             if (IsPassthrough(info, m, recipe)) return Passthrough("already-normalised");
-            // Then the pack shot that is already framed: 636 of the 1,446 images
-            // carded in the live run filled 90% of the frame before any trim, and
-            // carding those shrank the garment behind a wide margin.
-            if (mayReturnSource && m.ContentShareBefore >= FramedFill) return Passthrough("framed");
+            // Then the pack shot that is already framed, where the canvas has
+            // nothing to add and carding would only shrink the product behind a
+            // margin. It has to be framed on both axes and in a frame the
+            // consumer's tile will not crop; see IsFramed.
+            if (mayReturnSource && IsFramed(info, m, recipe)) return Passthrough("framed");
 
             sw.Restart();
             // A pack shot whose ground already is the recipe background cards on
@@ -171,6 +190,35 @@ public static class Normalizer
     }
 
     /// <summary>
+    /// True when the source is already the tile it would be carded into, so
+    /// handing it back costs the consumer nothing.
+    /// <para>
+    /// Fill is measured on BOTH axes, not the wider one.
+    /// <see cref="Measurement.ContentShareBefore"/> takes the larger axis,
+    /// which is the right question for "is there air to trim" and the wrong
+    /// one for "is this framed": a frypan lying across a square frame fills
+    /// 95% of the width and a fifth of the height, and handing that back
+    /// leaves the tile to crop its handle off. The frame is the product's own
+    /// only when the product reaches both edges of it.
+    /// </para>
+    /// <para>
+    /// The frame must also be no wider than the canvas allows — see
+    /// <see cref="FramedAspectSlack"/>.
+    /// </para>
+    /// </summary>
+    private static bool IsFramed(SourceInfo info, Measurement m, Recipe recipe)
+    {
+        var (w, h) = DisplaySize(info);
+        if (Math.Min(m.Box.Width / (double)w, m.Box.Height / (double)h) < FramedFill) return false;
+        var canvasAspect = recipe.CanvasWidth / (double)recipe.CanvasHeight;
+        return w / (double)h <= canvasAspect * (1 + FramedAspectSlack);
+    }
+
+    /// <summary>Source dimensions as they are displayed, with orientation applied.</summary>
+    private static (int Width, int Height) DisplaySize(SourceInfo info) =>
+        info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
+
+    /// <summary>
     /// True only when re-encoding could not change the bytes in any way that matters:
     /// same format, exactly the canvas size, no alpha, no orientation to apply, no
     /// metadata to strip, the recipe's ground, and the content already at the
@@ -182,7 +230,7 @@ public static class Normalizer
         // An output carries no orientation tag and no metadata; a source with either
         // would change on re-encode, so it is not already normalised.
         if (info.Orientation != 1 || info.HasMetadata) return false;
-        var (w, h) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
+        var (w, h) = DisplaySize(info);
         var srcAspect = w / (double)h;
         var want = recipe.CanvasWidth / (double)recipe.CanvasHeight;
         if (Math.Abs(srcAspect - want) / want > 0.01) return false;
