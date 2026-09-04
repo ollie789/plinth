@@ -24,7 +24,7 @@ public sealed record PipelineOptions(
         int? concurrency = int.TryParse(env("PLINTH_CONCURRENCY"), out var c) && c > 0 ? c : null;
         var signing = env("PLINTH_SIGNING_KEY");
         return new PipelineOptions(
-            FetchPolicy.FromHostList(env("PLINTH_ALLOWED_HOSTS")),
+            FetchPolicy.FromHostList(env("PLINTH_ALLOWED_HOSTS")) with { MaxBytes = MaxBytesFrom(env("PLINTH_MAX_BYTES")) },
             env("PLINTH_STORE") ?? "none",
             recipes,
             string.IsNullOrEmpty(signing) ? null : signing,
@@ -43,6 +43,20 @@ public sealed record PipelineOptions(
         if (string.IsNullOrEmpty(raw)) return DefaultMaxInFlight;
         if (!int.TryParse(raw, out var n) || n < 1)
             throw new PlinthException("PLINTH_MAX_INFLIGHT must be an integer of 1 or more");
+        return n;
+    }
+
+    /// <summary>
+    /// The largest source the fetcher will pull, in bytes. It is a memory bound before it is
+    /// anything else — <see cref="DefaultMaxInFlight"/> sources of this size can be in flight
+    /// at once — so it is deliberately settable per deployment rather than fixed at build
+    /// time. A provider that re-hosts 16 MB thumbnails is not a reason to cut a release.
+    /// </summary>
+    private static int MaxBytesFrom(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return new FetchPolicy(new HashSet<string>()).MaxBytes;
+        if (!int.TryParse(raw, out var n) || n < 1)
+            throw new PlinthException("PLINTH_MAX_BYTES must be an integer of 1 or more");
         return n;
     }
 
