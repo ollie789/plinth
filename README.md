@@ -18,7 +18,7 @@ from the full catalogue run of 4 September 2026, engine 1.5, not a sample.
 
 | | |
 |---|---|
-| Catalogue | 58,416 primary images across 36 collections and 19 source hosts |
+| Catalogue | 58,416 primary images across 36 collections; 98% on the provider's own CDN, the rest from seven retailer hosts, in jpeg, png, webp and gif |
 | Normalised | 44,800 carded (77%); 12,848 passed through as editorial or already framed |
 | Failed | 72 (0.12%), every one a source that returned 403, 404 or 410, or exceeded the size cap |
 | Engine time | 113 ms per image mean, 89 ms median; 1.8 core-hours for the whole run |
