@@ -155,7 +155,7 @@ Emitted for every image, success or failure. Stored beside the output as
 ```json
 {
   "key": "…",
-  "engineVersion": "1.4",
+  "engineVersion": "1.5",
   "libvipsVersion": "8.18.6",
   "recipeHash": "…",
   "source": { "sha256": "…", "bytes": 184233, "width": 1600, "height": 2000, "format": "jpeg", "hadAlpha": false, "orientationApplied": 1 },
@@ -173,7 +173,7 @@ Emitted for every image, success or failure. Stored beside the output as
 `passthroughReason` is null unless `status` is `passthrough`, where it is one
 of `already-normalised` (re-encoding could not change the bytes), `editorial`
 (the verdict said this is not a pack shot) or `framed` (a pack shot whose
-content already fills its frame).
+content fills its frame on both axes, in a frame no wider than the canvas).
 `ground.matchesBackground` says whether the sampled ground is within 40 of the
 recipe background — the same test the verdict and the canvas both use — and
 `ground.balanced` says whether the ground was scaled onto that background
@@ -201,8 +201,11 @@ Only the front doors fetch; Core takes bytes.
   allowlist and against a private-address block (loopback, RFC 1918,
   link-local, unique-local, metadata endpoints). A redirect to anywhere else
   fails the fetch.
-- Caps: 12 MB body (checked on `Content-Length` and again on the read
-  stream), 12 s timeout, a fixed User-Agent that names the tool.
+- Caps: `PLINTH_MAX_BYTES` (20 MB by default, checked on `Content-Length`
+  and again on the read stream), 12 s timeout, a fixed User-Agent that names
+  the tool. The cap bounds memory before it bounds bandwidth — `MaxInFlight`
+  sources of this size can be held at once — which is why it is deployment
+  configuration rather than a build-time constant.
 
 **Source upgrades.** Some feeds hand us a thumbnail when the same host will
 serve the master for the same request, so the URL is rewritten before anything
@@ -285,12 +288,30 @@ gets slack for studio lighting gradients, which spread the corners a little on
 perfectly good pack shots.
 
 The `editorial` policy also covers the pack shot that needs nothing done to
-it. Content whose share before any trim reaches **0.90** already fills its
-frame — an on-model shot with a little air, a tight crop — and the canvas has
-nothing to add: carding it shrinks the garment and puts a wide margin around
-it. Under `passthrough` those come back with reason `framed`; under `card`
-they are carded like anything else. The verdict is checked first, so a scene
-that also fills its frame still says `editorial`.
+it. Content that already fills **0.90** of its frame — an on-model shot with a
+little air, a tight crop — leaves the canvas nothing to add: carding it
+shrinks the garment and puts a wide margin around it. Under `passthrough`
+those come back with reason `framed`; under `card` they are carded like
+anything else. The verdict is checked first, so a scene that also fills its
+frame still says `editorial`.
+
+Two conditions define "fills its frame", and engine 1.5 added the second
+after the first turned out to be insufficient on its own:
+
+- **Fill is measured on both axes**, `min(width fill, height fill)`, not the
+  wider one. `ContentShareBefore` is a `max` because that is the right
+  question for "is there air to trim"; it is the wrong question for "is this
+  framed". A frypan lying across a square frame fills 95% of the width and a
+  fifth of the height, scored 0.95, and was handed back for the consumer's
+  tile to crop the handle off.
+- **The frame must be no wider than the canvas**, within `FramedAspectSlack`
+  (5%). A consumer fits whatever it is given to the shape it wants and crops
+  the rest, so a source materially wider than the canvas loses its ends
+  however full it is — a shoe shot 2.2 times wider than tall showed its middle
+  third in a 4:5 tile, neither toe nor heel. The bound is one-sided on
+  purpose: a portrait source loses a little off the top and stays legible, and
+  bounding that side too would card the model shots the rule exists to
+  protect.
 
 A passthrough of either kind returns the retailer's original bytes and format,
 which may be larger than a tile; formats a browser cannot show (tiff, heif) are
@@ -485,26 +506,41 @@ one interface.
   custom domain such as `img.lastlook.com.au`.
 - **CF hosting**: their call. The image runs anywhere Docker does.
 
-## 9. LASTLOOK integration (Mahir repo, separate branch, after v1 ships)
+## 9. LASTLOOK integration (shipped 4 September 2026)
 
-The container, backed by the Blob store, replaces the Next.js route:
+The container, backed by the Blob store, replaced the Next.js route. What
+shipped differs from the plan in three places, each of which was learned the
+hard way; `docs/RUNBOOK.md` has the operator's version.
 
-1. The mapper's `engineImageUrl` emits the Plinth API URL
-   (`https://img.lastlook.com.au/v1/image?src=…&sig=…`) instead of
+1. The mapper's `engineImageUrl` emits the signed Plinth URL instead of
    `/img-engine`, still wrapped by `/_next/image` for per-width resizing and
-   AVIF. The Plinth host is added to `next.config.ts` image
-   `remotePatterns`. No per-product state: the key derives from the URL.
-2. The API serves from the Blob store when the key exists and processes,
-   stores and serves when it does not, so the first request for any image is
-   never a broken tile and every later one is a Blob read.
-3. Feed sync pre-warms: after each sync it requests every engine-host image
-   once, so shoppers almost never pay the processing latency. This is a
-   fire-and-forget step; a failure here changes nothing for the page.
-4. `lib/image-engine.ts` keeps `ENGINE_HOSTS` as the source of truth and the
-   same list is the container's `PLINTH_ALLOWED_HOSTS`. The `/img-engine`
-   route stays as a dormant fallback for one release, then retires.
+   AVIF, with the Plinth host in `next.config.ts` `remotePatterns`. No
+   per-product state: the key derives from the URL. **The URL also carries
+   `&v=<PLINTH_ENGINE>`**, a parameter Plinth ignores. Every layer below the
+   mapper caches on the URL and Plinth serves tiles `immutable` for a year, so
+   an engine roll that changed the bytes without changing the URL left
+   production serving the previous tiles while every health check read green.
+   The constant is bumped in the same change that rolls the container.
+2. The API serves from Blob when the key exists and processes, stores and
+   serves when it does not, so the first request for any image is never a
+   broken tile.
+3. Warming is a CLI run, not a feed-sync step. `tools/catalogue-images.ts`
+   in the Mahir repo walks the feed for every primary image and `plinth run
+   -o azblob://tiles` processes locally into the same store the API reads,
+   so a full warm never loads the container. Only primaries are warmed; the
+   gallery's other images are mapped too but processed on first request.
+4. `lib/image-engine.ts` keeps `PLINTH_HOSTS` as the source of truth, mirrored
+   by the container's `PLINTH_ALLOWED_HOSTS`, and the warm tool imports it so
+   the two cannot drift. The `/img-engine` route remains as the fallback when
+   the Plinth variables are unset.
+5. A source that answers nothing — 403, 404, 410 — is dropped at the mapper
+   from a generated list (`lib/unfetchable-images.ts`). Plinth's failure
+   redirect cannot help when the source is what is missing, and hiding the
+   tile client-side would leave the floor's derived claims counting products
+   nobody can see. Oversized sources are deliberately not dropped: the
+   redirect serves them fine, just uncarded.
 
-Nothing in the feed contract changes.
+Nothing in the feed contract changed.
 
 ## 10. Security
 
@@ -649,7 +685,15 @@ and the container only sees misses.
 | Same, `minReplicas: 0`, pre-warm at sync | a few dollars | A cold start only on a miss the sync did not cover |
 
 Start with a warm replica for the launch week, read the miss rate from the
-logs, then decide. Blob storage for the whole catalogue is under a gigabyte.
+logs, then decide.
+
+Measured, 4 September 2026, engine 1.5, the full catalogue: 44,800 carded
+tiles at 47 KB mean is 2.2 GB; records add about a kilobyte each. The
+container runs `minReplicas: 1` at 0.5 vCPU / 1 GiB and answers a store miss
+in about 40 ms. Two Azure Monitor alerts cover it — no running replica, and a
+restart count above three in fifteen minutes — because there is no runtime
+fallback once a signed URL is emitted: a Plinth outage is broken tiles across
+the whole site, not degraded ones.
 
 ### 12.6 Measurement
 
@@ -683,6 +727,18 @@ is a later addition.
   the compute argument true, and it removes cold-start risk from our tiles.
 - Verdict enforced from engine 1.1, after the first live run showed the
   flagged images were all scenes; enforcement is a passthrough, never a crop.
+- Framed passthrough requires fill on both axes and a frame no wider than
+  the canvas, from engine 1.5 (4 Sep). Measuring the wider axis alone handed
+  wide products back untouched for the consumer's tile to crop; see 5.4.
+- The engine version rides in the consumer's URL as an ignored parameter, so
+  a roll busts every cache below the mapper. Without it an engine change is
+  invisible in production for as long as the caches remember (a year).
+- `MaxBytes` is deployment configuration (`PLINTH_MAX_BYTES`), not a
+  build-time constant, and the default is 20 MB: a provider shipping bigger
+  thumbnails should not require a release. Verified not to be part of the
+  key, so raising it invalidates nothing.
+- Dead sources are dropped at the consumer's mapper, not hidden in its
+  browser, so the floor's derived claims stay honest.
 - No feed changes.
 
 ## 15. Open items
@@ -718,9 +774,21 @@ is a later addition.
   edge contact was never the signal — fill is. 85% was chosen by eye from 78,
   85 and 90 side by side; whether it holds across more brands is the thing to
   watch once the framed passthrough rate is visible in production.
-- Azure subscription, resource group and the custom domain for the store.
-- Whether LASTLOOK's warm replica is worth its small monthly cost versus
-  relying entirely on pre-warming at sync.
+- The custom domain (`img.lastlook.com.au`) for the store. The subscription,
+  resource group, Container App, Blob store and alerting exist.
+- LASTLOOK's tiles are 3:4 while the canvas is 4:5, so every tile loses about
+  6% of its width to the crop and a wide item at 92% of the canvas clears it
+  by under a percent. Either the tile changes shape, which is a design call
+  across every floor, or the canvas does, which is a recipe change that
+  re-keys the store. Deliberately parked on 4 Sep with the images finally
+  right.
+- The consumer's unfetchable-source list is a snapshot refreshed by a full
+  warm. A source that dies between warms shows an empty tile until the next
+  one; making it live means persisting verification somewhere.
+- Pruning superseded generations from the store is manual: a lifecycle rule
+  on last-*modified* would be destructive here, because tiles are written once
+  and never touched, so an age policy would eventually delete the live
+  catalogue. Automatic pruning needs last-*access* tracking enabled first.
 - Recipe naming for CF: whether they want the LASTLOOK default or their own.
 - The 12.1 budgets are targets set before a line of code exists; the first
   benchmark run replaces them with measured numbers and CI enforces from
@@ -728,7 +796,9 @@ is a later addition.
   (one image per core is how the batch runs, so a single-threaded image is
   the honest unit): mean CPU per image 101 ms, max wall p95 196.4 ms, max
   output 57924 bytes (56 KB) — over the 40 ms / 120 ms provisional budgets
-  above; `docs/bench/baseline.json` is now the enforced baseline and the 12.1
+  above. Re-baselined 2026-09-04 at engine 1.5: mean CPU 111.4 ms, max wall
+  p95 222.3 ms, max output 75,242 bytes (73 KB) — the extra bytes are the
+  ground balance and the wider content share, both deliberate; `docs/bench/baseline.json` is now the enforced baseline and the 12.1
   figures stay as the longer-term target. Only output bytes gate CI by
   default, since they are deterministic; `--strict` also gates CPU and wall
   time for runs on a quiet machine.
