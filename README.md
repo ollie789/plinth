@@ -267,6 +267,13 @@ reported but never fail a build on their own, because they move with whatever
 else the machine is doing — pass `--strict` to gate on those too.
 `--write-baseline` resets the baseline after an intentional change.
 
+## Operating it
+
+If you are deploying Plinth, rolling the engine, or warming a catalogue, read
+`docs/RUNBOOK.md` first. Two of the things in it — merge before you tag, and
+bump the consumer's engine constant in the same change — fail silently rather
+than loudly, and both have cost a debugging session already.
+
 ## Design
 
 The full design lives in `docs/2026-09-02-plinth-design.md`; the build plans
