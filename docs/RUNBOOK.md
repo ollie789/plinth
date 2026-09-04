@@ -111,7 +111,7 @@ only what actually changed.
 `PLINTH_ON_FAILURE=redirect` (the default) sends a 302 to the original source.
 That splits failures into two groups that deserve opposite handling.
 
-**Oversized** — over `MaxBytes` (12 MB). The redirect is followed and the
+**Oversized** — over `PLINTH_MAX_BYTES` (20 MB). The redirect is followed and the
 original is served, so the product appears, just without the canvas. Leave these
 alone. Verified: a 16.7 MB JPEG reached the page as a 54 KB webp.
 

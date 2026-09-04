@@ -10,6 +10,27 @@ CLI for batch runs at ingest — over one deterministic core: same bytes and
 recipe always produce the same output, keyed by content, so reruns skip what
 already exists.
 
+## In production
+
+Plinth serves every product image on [LASTLOOK](https://live.lastlook.com.au),
+a multi-seller sale site over the Click Frenzy feed. The numbers below are
+from the full catalogue run of 4 September 2026, engine 1.5, not a sample.
+
+| | |
+|---|---|
+| Catalogue | 58,416 primary images across 36 collections and 19 source hosts |
+| Normalised | 44,800 carded (77%); 12,848 passed through as editorial or already framed |
+| Failed | 72 (0.12%), every one a source that returned 403, 404 or 410, or exceeded the size cap |
+| Engine time | 113 ms per image mean, 89 ms median; 1.8 core-hours for the whole run |
+| Wall clock | 31 minutes at 48 workers on a 14-core laptop — network-bound on the source CDN, not CPU-bound |
+| Tile size | 47 KB mean, 36 KB median; 2.2 GB for all 44,800 |
+| Serving | one 0.5 vCPU / 1 GiB container, about 40 ms on a store miss, Blob reads otherwise |
+
+Scaled linearly, a million images is roughly 30 core-hours of processing and
+36 GB of tiles. Run at ingest, where the bytes are already in hand, the
+network cost disappears and the same catalogue processes in about eight
+minutes on the same laptop.
+
 ## Run the API
 
 ```
@@ -50,8 +71,8 @@ spellings of one source are fetched and reported once.
 | `GET /v1/image?src=<url>[&recipe=<name>][&sig=<hmac>]` | The normalised image. `400` if `src` is missing or not on the allowlist, `403` on a bad signature; a failed normalise redirects to `src` (302, default) or returns `502` with the result record as JSON, per `PLINTH_ON_FAILURE`. |
 | `HEAD /v1/image?…` | The same work and the same headers as `GET`, with no body — for a CDN or a prober asking whether a key is servable. |
 | `GET /v1/inspect?src=<url>[&recipe=<name>][&sig=<hmac>]` | The result record as JSON, no image — for tuning and debugging. Validated and rate-gated exactly like `/v1/image`, and it counts against `PLINTH_MAX_INFLIGHT` like any other pipeline call; on a store hit it reads the record alone and never moves the image bytes. |
-| `POST /v1/normalize?[recipe=<name>]` | Raw image bytes as the body, image out. `400` on an empty body, `413` once the body exceeds the 12 MB cap, `403` if signing is on and `X-Plinth-Signature` does not verify, `422` with the record as JSON if normalising fails. |
-| `GET /healthz` | Liveness, plus the process counters: `{"status":"ok","hits":n,"misses":n,"failed":n}` — store hits, results processed, and results that failed, since start. |
+| `POST /v1/normalize?[recipe=<name>]` | Raw image bytes as the body, image out. `400` on an empty body, `413` once the body exceeds `PLINTH_MAX_BYTES` (20 MB by default), `403` if signing is on and `X-Plinth-Signature` does not verify, `422` with the record as JSON if normalising fails. |
+| `GET /healthz` | Liveness, plus the process counters: `{"status":"ok","hits":n,"misses":n,"failed":n}` — store hits, results processed, and results that failed, since start. They are per process: behind a scaler each replica counts its own, so consecutive reads can go down as well as up. |
 | `GET /version` | Engine version, libvips version, active recipe names. |
 
 Successful and failed image responses alike carry `X-Plinth-Key`,
@@ -134,10 +155,14 @@ rug in a lounge is not a pack shot, and shrinking one onto a white card makes
 a grey box floating on white — so under the default `editorial` policy it
 passes through untouched (`status: "passthrough"`, `passthroughReason:
 "editorial"`) and only `editorial: "card"` trims and cards it anyway. The same
-policy covers a pack shot that needs nothing done to it: content already
-filling 90% of its frame before any trim comes back untouched with
-`passthroughReason: "framed"`, because carding it would only shrink the product
-behind a margin. A pack shot photographed on its own grey ground cards on that
+policy covers a pack shot that needs nothing done to it: content that already
+fills 90% of its frame **on both axes**, in a frame no wider than the canvas,
+comes back untouched with `passthroughReason: "framed"`, because carding it
+would only shrink the product behind a margin. Both conditions matter. A
+frypan lying across a square frame fills 95% of the width and a fifth of the
+height, and a shoe shot 2.2 times wider than tall fills its frame completely;
+handed back as-is, each one meets a 4:5 tile that crops the handle off the
+first and shows the middle third of the second. Those are carded. A pack shot photographed on its own grey ground cards on that
 grey, edge to edge.
 
 Editorial passthrough returns the retailer's original bytes and format, which
@@ -182,7 +207,7 @@ reached the pixels — `ok`, `passthrough` or `failed` — is written as its ful
 result record, so the manifest doubles as the verdict and timing report:
 
 ```json
-{"key":"86d6dd…","sourceId":"sha256:3f939c…","engineVersion":"1.4","libvipsVersion":"8.18.6","recipeHash":"e9f6c8f3f6a3d450","status":"ok","error":null,"passthroughReason":null,"source":{"sha256":"3f939c…","bytes":22193,"width":560,"height":700,"format":"jpeg","hadAlpha":false,"orientationApplied":1},"ground":{"sampled":"#e5e5e5","cornerSpread":5,"cornersAgree":true,"matchesBackground":true},"trim":{"left":53,"top":355,"width":472,"height":221,"noop":false,"contentShareBefore":0.8429},"verdict":{"packShot":true,"confidence":1,"reasons":[]},"output":{"width":1000,"height":1250,"bytes":15160,"format":"webp"},"timingsMs":{"inspect":15,"measure":56,"decode":0,"render":54,"encode":0,"total":127}}
+{"key":"63f50d…","sourceId":"https://img.clickfrenzy.com.au/deals/…-thumbnail.jpg","engineVersion":"1.5","libvipsVersion":"8.18.6","recipeHash":"dea02044224e2f31","status":"ok","error":null,"passthroughReason":null,"source":{"sha256":"1b6cc7…","bytes":197428,"width":2048,"height":2048,"format":"jpeg","hadAlpha":false,"orientationApplied":1},"ground":{"sampled":"#f5f5f5","cornerSpread":0,"cornersAgree":true,"matchesBackground":true,"balanced":true},"trim":{"left":220,"top":1164,"width":1544,"height":716,"noop":false,"contentShareBefore":0.7539},"verdict":{"packShot":true,"confidence":1,"reasons":[]},"output":{"width":1000,"height":1250,"bytes":64838,"format":"webp"},"timingsMs":{"inspect":0,"measure":26,"decode":0,"render":62,"encode":0,"total":89}}
 ```
 
 An item that was never processed — `skipped` (the key was already in the
