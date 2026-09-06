@@ -51,11 +51,11 @@ public static class ApiHost
         configure?.Invoke(builder);
 
         var app = builder.Build();
-        Map(app);
+        Map(app, options);
         return app;
     }
 
-    private static void Map(WebApplication app)
+    private static void Map(WebApplication app, PipelineOptions options)
     {
         app.MapGet("/healthz", (ApiStats stats) =>
             Results.Ok(new { status = "ok", hits = stats.Hits, misses = stats.Misses, failed = stats.Failed }));
@@ -124,7 +124,13 @@ public static class ApiHost
         });
 
         // The gate is taken before the body is read, not after: a queued upload that already
-        // held its bytes in memory would defeat the point of bounding work in flight.
+        // held its bytes in memory would defeat the point of bounding work in flight. The
+        // price is that the signature — it is over the body — cannot be checked until the body
+        // has arrived, so on a public host an unsigned caller that sends its body slowly holds
+        // a slot for as long as it likes. That is why the route is not mapped unless
+        // PLINTH_ENABLE_NORMALIZE is set: a consumer that fetches by URL never needs it, and
+        // an ingest caller that already holds the bytes is not on the public internet.
+        if (!options.NormalizeEnabled) return;
         app.MapPost("/v1/normalize", async (string? recipe, PlinthPipeline pipeline, PipelineOptions o, SemaphoreSlim gate,
                                             ApiStats stats, ILogger log, HttpContext http, CancellationToken ct) =>
         {

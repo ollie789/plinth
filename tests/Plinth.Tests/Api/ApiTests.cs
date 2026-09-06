@@ -26,8 +26,8 @@ public class ApiTests : IAsyncLifetime
     private readonly FakeFetcher _fetcher = new FakeFetcher().With(Url, Shot()).With(OtherUrl, Shot2());
     private readonly MemoryStore _store = new();
 
-    private PipelineOptions Options(string? signingKey = null, string onFailure = "redirect", int maxInFlight = 4) =>
-        new(FetchPolicy.FromHostList("cdn.example.com"), "none", RecipeCatalog.DefaultOnly, signingKey, onFailure, 1, maxInFlight);
+    private PipelineOptions Options(string? signingKey = null, string onFailure = "redirect", int maxInFlight = 4, bool normalize = true) =>
+        new(FetchPolicy.FromHostList("cdn.example.com"), "none", RecipeCatalog.DefaultOnly, signingKey, onFailure, 1, maxInFlight, normalize);
 
     private async Task StartAsync(PipelineOptions options)
     {
@@ -94,6 +94,18 @@ public class ApiTests : IAsyncLifetime
         // about which hosts are configured: every unsigned request looks the same from outside.
         var offList = await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString("https://evil.com/a.jpg")}");
         Assert.Equal(HttpStatusCode.Forbidden, offList.StatusCode);
+    }
+
+    [Fact]
+    public async Task Normalize_does_not_exist_unless_it_is_enabled()
+    {
+        // The upload route takes a gate slot before it can verify a signature, so a public host
+        // must not offer it by accident. Off means not mapped, not 403: there is nothing to probe.
+        await DisposeAsync();
+        await StartAsync(Options(normalize: false));
+        var r = await _client.PostAsync("/v1/normalize", new ByteArrayContent(Shot()));
+        Assert.Equal(HttpStatusCode.NotFound, r.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(Url)}")).StatusCode);
     }
 
     [Fact]
@@ -190,7 +202,7 @@ public class ApiTests : IAsyncLifetime
         await DisposeAsync();
         var capped = new PipelineOptions(
             new FetchPolicy(FetchPolicy.FromHostList("cdn.example.com").AllowedHosts, MaxBytes: 1024),
-            "none", RecipeCatalog.DefaultOnly, null, "redirect", 1);
+            "none", RecipeCatalog.DefaultOnly, null, "redirect", 1, NormalizeEnabled: true);
         await StartAsync(capped);
 
         var tooLarge = await _client.PostAsync("/v1/normalize", new ByteArrayContent(new byte[2048]));

@@ -71,7 +71,7 @@ spellings of one source are fetched and reported once.
 | `GET /v1/image?src=<url>[&recipe=<name>][&sig=<hmac>]` | The normalised image. `400` if `src` is missing or not on the allowlist, `403` on a bad signature; a failed normalise redirects to `src` (302, default) or returns `502` with the result record as JSON, per `PLINTH_ON_FAILURE`. |
 | `HEAD /v1/image?…` | The same work and the same headers as `GET`, with no body — for a CDN or a prober asking whether a key is servable. |
 | `GET /v1/inspect?src=<url>[&recipe=<name>][&sig=<hmac>]` | The result record as JSON, no image — for tuning and debugging. Validated and rate-gated exactly like `/v1/image`, and it counts against `PLINTH_MAX_INFLIGHT` like any other pipeline call; on a store hit it reads the record alone and never moves the image bytes. |
-| `POST /v1/normalize?[recipe=<name>]` | Raw image bytes as the body, image out. `400` on an empty body, `413` once the body exceeds `PLINTH_MAX_BYTES` (20 MB by default), `403` if signing is on and `X-Plinth-Signature` does not verify, `422` with the record as JSON if normalising fails. |
+| `POST /v1/normalize?[recipe=<name>]` | Only when `PLINTH_ENABLE_NORMALIZE=true`; otherwise the route is not mapped and answers `404`. Raw image bytes as the body, image out. `400` on an empty body, `413` once the body exceeds `PLINTH_MAX_BYTES` (20 MB by default), `403` if signing is on and `X-Plinth-Signature` does not verify, `422` with the record as JSON if normalising fails. |
 | `GET /healthz` | Liveness, plus the process counters: `{"status":"ok","hits":n,"misses":n,"failed":n}` — store hits, results processed, and results that failed, since start. They are per process: behind a scaler each replica counts its own, so consecutive reads can go down as well as up. |
 | `GET /version` | Engine version, libvips version, active recipe names. |
 
@@ -233,6 +233,7 @@ open, a recipe that would not resolve), and `1` on a command-line usage error.
 | `PLINTH_ON_FAILURE` | `redirect` \| `error` | `redirect` |
 | `PLINTH_MAX_INFLIGHT` | positive integer | `4` (requests beyond it queue on the API's gate) |
 | `PLINTH_MAX_BYTES` | positive integer | `20971520` (20 MB) — the largest source the fetcher will pull |
+| `PLINTH_ENABLE_NORMALIZE` | `true` | unset — `POST /v1/normalize` is not mapped. It takes a gate slot before it can check a signature, so a public host should only offer it on purpose |
 | `PLINTH_RECIPES` | path to a JSON map of named recipes | unset (only the built-in `default` recipe) |
 | `PLINTH_CONCURRENCY` | positive integer | processor count (the API and `plinth inspect`; `plinth run` always runs libvips at 1 per `--concurrency` process worker) |
 | `PLINTH_AZURE_STORAGE_CONNECTION` | Azure Storage connection string | unset |

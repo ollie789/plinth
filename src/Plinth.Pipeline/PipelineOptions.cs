@@ -11,7 +11,8 @@ public sealed record PipelineOptions(
     string? SigningKey,
     string OnFailure,
     int? Concurrency,
-    int MaxInFlight = 4)
+    int MaxInFlight = 4,
+    bool NormalizeEnabled = false)
 {
     public const int DefaultMaxInFlight = 4;
 
@@ -30,7 +31,11 @@ public sealed record PipelineOptions(
             string.IsNullOrEmpty(signing) ? null : signing,
             onFailure,
             concurrency,
-            MaxInFlightFrom(env("PLINTH_MAX_INFLIGHT")));
+            MaxInFlightFrom(env("PLINTH_MAX_INFLIGHT")),
+            // Off unless asked for. The upload route takes a gate slot before it can check a
+            // signature, so on a public host it is a way to hold the pipeline with no key;
+            // see ApiHost. Ingest callers that hold the bytes turn it on deliberately.
+            NormalizeEnabled: env("PLINTH_ENABLE_NORMALIZE") == "true");
     }
 
     /// <summary>

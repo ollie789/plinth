@@ -19,6 +19,7 @@ public class PipelineOptionsTests
             ["PLINTH_ON_FAILURE"] = "error",
             ["PLINTH_CONCURRENCY"] = "2",
             ["PLINTH_MAX_INFLIGHT"] = "9",
+            ["PLINTH_ENABLE_NORMALIZE"] = "true",
         };
         var o = PipelineOptions.FromEnvironment(k => env.GetValueOrDefault(k));
         Assert.Equal(new HashSet<string> { "a.com", "b.com" }, o.Fetch.AllowedHosts);
@@ -28,6 +29,7 @@ public class PipelineOptionsTests
         Assert.Equal("error", o.OnFailure);
         Assert.Equal(2, o.Concurrency);
         Assert.Equal(9, o.MaxInFlight);
+        Assert.True(o.NormalizeEnabled);
         Assert.Equal(20 * 1024 * 1024, o.Fetch.MaxBytes);
 
         var bare = PipelineOptions.FromEnvironment(_ => null);
@@ -48,6 +50,14 @@ public class PipelineOptionsTests
         var missing = Path.Combine(Path.GetTempPath(), "plinth-no-such-recipes-" + Guid.NewGuid().ToString("N") + ".json");
         var unreadable = Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_RECIPES" ? missing : null));
         Assert.Equal($"PLINTH_RECIPES: could not read {missing}", unreadable.Message);
+    }
+
+    [Fact]
+    public void The_upload_route_is_off_unless_asked_for_by_exactly_true()
+    {
+        Assert.False(PipelineOptions.FromEnvironment(_ => null).NormalizeEnabled);
+        Assert.False(PipelineOptions.FromEnvironment(k => k == "PLINTH_ENABLE_NORMALIZE" ? "1" : null).NormalizeEnabled);
+        Assert.True(PipelineOptions.FromEnvironment(k => k == "PLINTH_ENABLE_NORMALIZE" ? "true" : null).NormalizeEnabled);
     }
 
     [Fact]
