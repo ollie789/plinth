@@ -72,7 +72,7 @@ spellings of one source are fetched and reported once.
 | `HEAD /v1/image?…` | The same work and the same headers as `GET`, with no body — for a CDN or a prober asking whether a key is servable. |
 | `GET /v1/inspect?src=<url>[&recipe=<name>][&sig=<hmac>]` | The result record as JSON, no image — for tuning and debugging. Validated and rate-gated exactly like `/v1/image`, and it counts against `PLINTH_MAX_INFLIGHT` like any other pipeline call; on a store hit it reads the record alone and never moves the image bytes. |
 | `POST /v1/normalize?[recipe=<name>]` | Only when `PLINTH_ENABLE_NORMALIZE=true`; otherwise the route is not mapped and answers `404`. Raw image bytes as the body, image out. `400` on an empty body, `413` once the body exceeds `PLINTH_MAX_BYTES` (20 MB by default), `403` if signing is on and `X-Plinth-Signature` does not verify, `422` with the record as JSON if normalising fails. |
-| `GET /healthz` | Liveness, plus the process counters: `{"status":"ok","hits":n,"misses":n,"failed":n}` — store hits, results processed, and results that failed, since start. They are per process: behind a scaler each replica counts its own, so consecutive reads can go down as well as up. |
+| `GET /healthz` | Liveness, always `200` while the process lives, plus what an operator needs: `{"status":"ok","store":"ok","hits":n,"misses":n,"failed":n,"storeFaults":n}`. `store` is a live probe — `"ok"`, or `"error: <type>"` / `"error: timeout"` when the store does not answer within 2 s; the status stays `200` on purpose, because a `503` would have the platform restart replicas, which does nothing for a store outage and starts a crash loop. Images are still served through one: a store the pipeline cannot read is a miss, a store it cannot write to is a result nobody kept, and `storeFaults` counts every request that happened to. Counters are per process: behind a scaler each replica counts its own, so consecutive reads can go down as well as up. |
 | `GET /version` | Engine version, libvips version, active recipe names. |
 
 Successful and failed image responses alike carry `X-Plinth-Key`,
@@ -221,7 +221,9 @@ write, so it gets the three fields that identify it:
 Exit code is `0` on a normal run — an unreadable file, a dead host or a store
 that rejects one put is that item's `failed` line, not the run's exit code —
 `2` if the run itself broke (input path not found, a store URI that would not
-open, a recipe that would not resolve), and `1` on a command-line usage error.
+open, a recipe that would not resolve, or a store that rejected every put and
+kept nothing — each item's line says `failed`, and the run says so too), and
+`1` on a command-line usage error.
 
 ## Environment variables
 

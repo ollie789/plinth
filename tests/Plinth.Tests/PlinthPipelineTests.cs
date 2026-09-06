@@ -71,6 +71,58 @@ public class PlinthPipelineTests
     }
 
     [Fact]
+    public async Task A_store_that_cannot_be_read_is_a_miss_not_an_error()
+    {
+        var fetcher = new FakeFetcher().With(Url, Shot());
+        var p = new PlinthPipeline(fetcher, new FaultyStore(failReads: true), RecipeCatalog.DefaultOnly);
+
+        var r = await p.ProcessUrlAsync(Url, null);
+        Assert.Equal("ok", r.Status);
+        Assert.NotNull(r.Bytes);
+        Assert.False(r.FromStore);
+        Assert.Contains("store is down (read)", r.StoreFault);
+        Assert.Equal(1, fetcher.Calls);
+
+        var inspected = await p.InspectUrlAsync(Url, null);
+        Assert.Equal("ok", inspected.Status);
+        Assert.Contains("store is down (read)", inspected.StoreFault);
+    }
+
+    [Fact]
+    public async Task A_store_that_cannot_be_written_still_returns_the_image()
+    {
+        var store = new FaultyStore(failWrites: true);
+        var p = new PlinthPipeline(new FakeFetcher().With(Url, Shot()), store, RecipeCatalog.DefaultOnly);
+
+        var r = await p.ProcessUrlAsync(Url, null);
+        Assert.Equal("ok", r.Status);
+        Assert.NotNull(r.Bytes);
+        Assert.Contains("store is down (write)", r.StoreFault);
+        Assert.False(await store.Inner.ExistsAsync(r.Record.Key));
+
+        var byBytes = await p.ProcessBytesAsync(Shot(), null, null);
+        Assert.Equal("ok", byBytes.Status);
+        Assert.Contains("store is down (write)", byBytes.StoreFault);
+    }
+
+    [Fact]
+    public async Task A_healthy_store_leaves_no_fault_on_the_result()
+    {
+        var p = new PlinthPipeline(new FakeFetcher().With(Url, Shot()), new MemoryStore(), RecipeCatalog.DefaultOnly);
+        Assert.Null((await p.ProcessUrlAsync(Url, null)).StoreFault);
+        Assert.Null((await p.ProcessUrlAsync(Url, null)).StoreFault);
+    }
+
+    [Fact]
+    public async Task The_callers_cancellation_is_not_a_store_fault()
+    {
+        var p = new PlinthPipeline(new FakeFetcher().With(Url, Shot()), new FaultyStore(), RecipeCatalog.DefaultOnly);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => p.ProcessUrlAsync(Url, null, cts.Token));
+    }
+
+    [Fact]
     public async Task Bytes_path_keys_by_content_when_no_source_id_is_given()
     {
         var p = new PlinthPipeline(new FakeFetcher(), new MemoryStore(), RecipeCatalog.DefaultOnly);

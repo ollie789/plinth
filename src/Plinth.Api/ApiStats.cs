@@ -10,16 +10,21 @@ public sealed class ApiStats
     private long _hits;
     private long _misses;
     private long _failed;
+    private long _storeFaults;
 
     public long Hits => Interlocked.Read(ref _hits);
     public long Misses => Interlocked.Read(ref _misses);
     public long Failed => Interlocked.Read(ref _failed);
 
+    /// <summary>Requests the store threw on. They were still answered, which is the point.</summary>
+    public long StoreFaults => Interlocked.Read(ref _storeFaults);
+
     /// <summary>One pipeline result, counted once: failed, or else hit or miss.</summary>
-    public void Observe(string status, bool fromStore)
+    public void Observe(string status, bool fromStore, bool storeFault)
     {
         if (status == "failed") Interlocked.Increment(ref _failed);
         else if (fromStore) Interlocked.Increment(ref _hits);
         else Interlocked.Increment(ref _misses);
+        if (storeFault) Interlocked.Increment(ref _storeFaults);
     }
 }

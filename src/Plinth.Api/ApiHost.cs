@@ -23,6 +23,9 @@ public static class ApiHost
     /// </summary>
     public const string LogCategory = "Plinth.Api";
 
+    /// <summary>A key no output can have — the store probe looks it up to prove the store answers.</summary>
+    private static readonly string ProbeKey = new('0', 64);
+
     public static WebApplication Build(string[] args, PipelineOptions? options = null, Action<WebApplicationBuilder>? configure = null)
     {
         var builder = WebApplication.CreateBuilder(args);
@@ -57,8 +60,34 @@ public static class ApiHost
 
     private static void Map(WebApplication app, PipelineOptions options)
     {
-        app.MapGet("/healthz", (ApiStats stats) =>
-            Results.Ok(new { status = "ok", hits = stats.Hits, misses = stats.Misses, failed = stats.Failed }));
+        // Whatever still escapes a handler is a bug, not a response. Say so once, without a
+        // stack trace, and never let a CDN keep it.
+        app.UseExceptionHandler(h => h.Run(async ctx =>
+        {
+            ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            ctx.Response.Headers.CacheControl = NoCache;
+            await ctx.Response.WriteAsJsonAsync(new { error = "internal error" });
+        }));
+
+        // Always 200 while the process lives. The store's state is in the body, not the status:
+        // a 503 here would have the platform restart replicas, which does nothing for a store
+        // outage and starts a crash loop. Images are still served through an outage — the
+        // pipeline treats a store it cannot reach as a miss — so this is what the alert and
+        // the operator read, not what the scaler acts on.
+        app.MapGet("/healthz", async (ApiStats stats, IOutputStore store, CancellationToken ct) =>
+        {
+            string storeState;
+            try
+            {
+                using var probe = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                probe.CancelAfter(TimeSpan.FromSeconds(2));
+                await store.ExistsAsync(ProbeKey, probe.Token);
+                storeState = "ok";
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { storeState = "error: timeout"; }
+            catch (Exception e) when (e is not OperationCanceledException) { storeState = $"error: {e.GetType().Name}"; }
+            return Results.Ok(new { status = "ok", store = storeState, hits = stats.Hits, misses = stats.Misses, failed = stats.Failed, storeFaults = stats.StoreFaults });
+        });
 
         app.MapGet("/version", (PipelineOptions o) => Results.Ok(new
         {
@@ -196,7 +225,9 @@ public static class ApiHost
     /// </summary>
     private static void Observe(ILogger log, ApiStats stats, string route, string? src, PipelineResult r, long started)
     {
-        stats.Observe(r.Status, r.FromStore);
+        stats.Observe(r.Status, r.FromStore, r.StoreFault is not null);
+        if (r.StoreFault is not null)
+            log.LogWarning("plinth store fault {Route} {Key} {Fault}", route, r.Record.Key, r.StoreFault);
         log.LogInformation("plinth request {Route} {Host} {Key} {Status} {Cache} {Ms}",
             route,
             src is not null && Uri.TryCreate(src, UriKind.Absolute, out var uri) ? uri.Host : "-",
