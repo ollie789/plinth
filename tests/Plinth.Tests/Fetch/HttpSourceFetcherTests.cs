@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using Plinth.Core;
 using Plinth.Pipeline.Fetch;
@@ -122,6 +123,58 @@ public class HttpSourceFetcherTests
         cts.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => Fetcher(h).FetchAsync("https://cdn.example.com/a.jpg", cts.Token));
+    }
+
+    [Fact]
+    public async Task A_source_that_stalls_after_the_headers_is_a_timeout_not_a_hang()
+    {
+        // HttpClient's own timeout stops at the headers when reading with ResponseHeadersRead,
+        // so this used to hold a gate slot or a CLI worker for as long as the source liked.
+        var h = new ScriptedHandler().On("https://cdn.example.com/a.jpg", () =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StalledStream()) });
+        var quick = new FetchPolicy(Policy.AllowedHosts, TimeoutSeconds: 1);
+        var ex = await Assert.ThrowsAsync<PlinthException>(() => Fetcher(h, quick).FetchAsync("https://cdn.example.com/a.jpg"));
+        Assert.Contains("timed out", ex.Message);
+    }
+
+    [Fact]
+    public async Task A_source_that_never_answers_is_a_timeout_too()
+    {
+        var quick = new FetchPolicy(Policy.AllowedHosts, TimeoutSeconds: 1);
+        var ex = await Assert.ThrowsAsync<PlinthException>(() => new HttpSourceFetcher(quick, new StalledHandler()).FetchAsync("https://cdn.example.com/a.jpg"));
+        Assert.Contains("timed out", ex.Message);
+    }
+
+    /// <summary>Never sends a response; only cancellation ends the wait.</summary>
+    private sealed class StalledHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            throw new UnreachableException();
+        }
+    }
+
+    /// <summary>A body whose reads never complete; only cancellation ends them.</summary>
+    private sealed class StalledStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     /// <summary>Serves a few bytes then throws IOException, as a reset connection would mid-download.</summary>

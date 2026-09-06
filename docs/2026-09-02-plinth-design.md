@@ -202,8 +202,9 @@ Only the front doors fetch; Core takes bytes.
   link-local, unique-local, metadata endpoints). A redirect to anywhere else
   fails the fetch.
 - Caps: `PLINTH_MAX_BYTES` (20 MB by default, checked on `Content-Length`
-  and again on the read stream), 12 s timeout, a fixed User-Agent that names
-  the tool. The cap bounds memory before it bounds bandwidth — `MaxInFlight`
+  and again on the read stream), a 12 s deadline over the whole fetch — every
+  redirect hop, the headers and the body, so a source that answers and then
+  stalls cannot hold a worker — and a fixed User-Agent that names the tool. The cap bounds memory before it bounds bandwidth — `MaxInFlight`
   sources of this size can be held at once — which is why it is deployment
   configuration rather than a build-time constant.
 

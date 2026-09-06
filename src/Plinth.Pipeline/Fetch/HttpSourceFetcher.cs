@@ -18,10 +18,10 @@ public sealed class HttpSourceFetcher : ISourceFetcher
     public HttpSourceFetcher(FetchPolicy policy, HttpMessageHandler? handler = null)
     {
         _policy = policy;
-        _http = new HttpClient(handler ?? GuardedHandler(), disposeHandler: true)
-        {
-            Timeout = TimeSpan.FromSeconds(policy.TimeoutSeconds),
-        };
+        // No timeout on the client itself. Reading with ResponseHeadersRead, HttpClient's
+        // timeout stops at the headers, which is exactly the half a stalled source exploits;
+        // the deadline lives in FetchAsync, where it covers the body too.
+        _http = new HttpClient(handler ?? GuardedHandler(), disposeHandler: true) { Timeout = Timeout.InfiniteTimeSpan };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd(policy.UserAgent);
     }
 
@@ -52,6 +52,23 @@ public sealed class HttpSourceFetcher : ISourceFetcher
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !_policy.Allows(uri))
             throw new PlinthException($"source not allowed: {url}");
 
+        // One deadline for the whole fetch: every redirect hop, the headers and the body. A
+        // source that answered the headers and then stalled used to hold the caller — a gate
+        // slot in the API, a worker in the CLI — for as long as it liked.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(_policy.TimeoutSeconds));
+        try
+        {
+            return await FetchAsync(uri, deadline.Token);
+        }
+        catch (OperationCanceledException e) when (!ct.IsCancellationRequested)
+        {
+            throw new PlinthException("source fetch timed out", e);
+        }
+    }
+
+    private async Task<FetchResult> FetchAsync(Uri uri, CancellationToken ct)
+    {
         for (var hop = 0; ; hop++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
@@ -60,17 +77,9 @@ public sealed class HttpSourceFetcher : ISourceFetcher
             {
                 response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
             catch (HttpRequestException e)
             {
                 throw FindPlinthException(e) ?? new PlinthException($"source fetch failed: {e.Message}", e);
-            }
-            catch (TaskCanceledException e) when (!ct.IsCancellationRequested)
-            {
-                throw new PlinthException("source fetch timed out", e);
             }
 
             using (response)
@@ -92,33 +101,18 @@ public sealed class HttpSourceFetcher : ISourceFetcher
 
                 try
                 {
-                    var stream = await response.Content.ReadAsStreamAsync(ct);
-                    await using (stream)
+                    await using var stream = await response.Content.ReadAsStreamAsync(ct);
+                    var buffer = new MemoryStream(capacity: (int)Math.Min(declared ?? 256 * 1024, _policy.MaxBytes));
+                    var chunk = new byte[64 * 1024];
+                    int read;
+                    while ((read = await stream.ReadAsync(chunk, ct)) > 0)
                     {
-                        var buffer = new MemoryStream(capacity: (int)Math.Min(declared ?? 256 * 1024, _policy.MaxBytes));
-                        var chunk = new byte[64 * 1024];
-                        int read;
-                        while ((read = await stream.ReadAsync(chunk, ct)) > 0)
-                        {
-                            if (buffer.Length + read > _policy.MaxBytes) throw new PlinthException("source too large");
-                            buffer.Write(chunk, 0, read);
-                        }
-                        return new FetchResult(buffer.ToArray(), uri.ToString(), response.Content.Headers.ContentType?.MediaType);
+                        if (buffer.Length + read > _policy.MaxBytes) throw new PlinthException("source too large");
+                        buffer.Write(chunk, 0, read);
                     }
+                    return new FetchResult(buffer.ToArray(), uri.ToString(), response.Content.Headers.ContentType?.MediaType);
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (TaskCanceledException e) when (!ct.IsCancellationRequested)
-                {
-                    throw new PlinthException("source fetch timed out", e);
-                }
-                catch (IOException e)
-                {
-                    throw new PlinthException($"source read failed: {e.Message}", e);
-                }
-                catch (HttpRequestException e)
+                catch (Exception e) when (e is IOException or HttpRequestException)
                 {
                     throw new PlinthException($"source read failed: {e.Message}", e);
                 }
