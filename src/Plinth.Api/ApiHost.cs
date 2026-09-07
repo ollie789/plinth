@@ -50,7 +50,7 @@ public static class ApiHost
         builder.Services.AddSingleton(sp => sp.GetRequiredService<ILoggerFactory>().CreateLogger(LogCategory));
         builder.Services.AddSingleton<ISourceFetcher>(_ => new HttpSourceFetcher(options.Fetch));
         builder.Services.AddSingleton<IOutputStore>(_ => StoreUri.Open(options.StoreUri, Environment.GetEnvironmentVariable));
-        builder.Services.AddSingleton(sp => new PlinthPipeline(sp.GetRequiredService<ISourceFetcher>(), sp.GetRequiredService<IOutputStore>(), options.Recipes));
+        builder.Services.AddSingleton(sp => new PlinthPipeline(sp.GetRequiredService<ISourceFetcher>(), sp.GetRequiredService<IOutputStore>(), options.Recipes, options.MaxPixels));
         configure?.Invoke(builder);
 
         var app = builder.Build();

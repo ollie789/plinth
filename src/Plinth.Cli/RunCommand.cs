@@ -55,7 +55,7 @@ public static class RunCommand
                 var manifestWriter = manifestPath is null ? stdout : new StreamWriter(manifestPath, append: false);
                 try
                 {
-                    var counts = await RunAsync(items, rec, store, fetchers(options), workers, pr.GetValue(refresh), manifestWriter, ct);
+                    var counts = await RunAsync(items, rec, store, fetchers(options), workers, pr.GetValue(refresh), options.MaxPixels, manifestWriter, ct);
                     Console.Error.WriteLine($"{items.Count} items: {counts.GetValueOrDefault("ok")} ok, {counts.GetValueOrDefault("passthrough")} passthrough, {counts.GetValueOrDefault("failed")} failed, {counts.GetValueOrDefault("skipped")} skipped, {counts.GetValueOrDefault("unchanged")} unchanged");
                 }
                 finally
@@ -191,7 +191,7 @@ public static class RunCommand
     }
 
     private static async Task<Dictionary<string, int>> RunAsync(List<Item> items, Recipe recipe, IOutputStore store, ISourceFetcher fetcher,
-        int workers, bool refresh, TextWriter manifest, CancellationToken ct)
+        int workers, bool refresh, int maxPixels, TextWriter manifest, CancellationToken ct)
     {
         var counts = new Dictionary<string, int>();
         var manifestLock = new object();
@@ -238,7 +238,7 @@ public static class RunCommand
             try
             {
                 if (f.Error is not null) { EmitRecord(ResultRecord.Failed(f.Key, f.SourceId, recipe, f.Error)); return; }
-                var result = Normalizer.Normalize(f.Bytes!, recipe, f.SourceId, token);
+                var result = Normalizer.Normalize(f.Bytes!, recipe, f.SourceId, token, maxPixels);
                 if (result.Status is "ok" or "passthrough")
                     await store.PutAsync(result.Record.Key, result.Output!, result.Record, token);
                 EmitRecord(result.Record);

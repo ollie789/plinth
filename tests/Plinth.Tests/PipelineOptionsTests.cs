@@ -20,6 +20,7 @@ public class PipelineOptionsTests
             ["PLINTH_CONCURRENCY"] = "2",
             ["PLINTH_MAX_INFLIGHT"] = "9",
             ["PLINTH_ENABLE_NORMALIZE"] = "true",
+            ["PLINTH_MAX_PIXELS"] = "20000000",
         };
         var o = PipelineOptions.FromEnvironment(k => env.GetValueOrDefault(k));
         Assert.Equal(new HashSet<string> { "a.com", "b.com" }, o.Fetch.AllowedHosts);
@@ -30,6 +31,7 @@ public class PipelineOptionsTests
         Assert.Equal(2, o.Concurrency);
         Assert.Equal(9, o.MaxInFlight);
         Assert.True(o.NormalizeEnabled);
+        Assert.Equal(20_000_000, o.MaxPixels);
         Assert.Equal(20 * 1024 * 1024, o.Fetch.MaxBytes);
 
         var bare = PipelineOptions.FromEnvironment(_ => null);
@@ -46,6 +48,8 @@ public class PipelineOptionsTests
         Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_INFLIGHT" ? "lots" : null));
         Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_BYTES" ? "0" : null));
         Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_BYTES" ? "plenty" : null));
+        Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_MAX_PIXELS" ? "0" : null));
+        Assert.Equal(SourceInspector.MaxPixels, PipelineOptions.FromEnvironment(_ => null).MaxPixels);
 
         var missing = Path.Combine(Path.GetTempPath(), "plinth-no-such-recipes-" + Guid.NewGuid().ToString("N") + ".json");
         var unreadable = Assert.Throws<PlinthException>(() => PipelineOptions.FromEnvironment(k => k == "PLINTH_RECIPES" ? missing : null));

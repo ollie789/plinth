@@ -33,6 +33,7 @@ public static class Measurer
 {
     public const int MeasureSide = 512;
     private const int Patch = 8;
+    private const int TrimWindow = 3;
 
     public static Measurement Measure(byte[] bytes, SourceInfo info, Recipe recipe)
     {
@@ -51,8 +52,12 @@ public static class Measurer
             var scaleX = thumb.Width / (double)fullW;
             var scaleY = thumb.Height / (double)fullH;
 
-            var raw = thumb.FindTrim(threshold: recipe.TrimThreshold, background: ground.Sampled.ToVips());
-            var t = raw.Select(Convert.ToInt32).ToArray();
+            // find_trim runs a 3x3 median and refuses a frame smaller than its window. A
+            // working copy under 3px on a side — a tracking pixel, a divider strip that
+            // thumbnails to 512x1 — has nothing to trim anyway, so it is the full frame.
+            int[] t = thumb.Width < TrimWindow || thumb.Height < TrimWindow
+                ? [0, 0, thumb.Width, thumb.Height]
+                : thumb.FindTrim(threshold: recipe.TrimThreshold, background: ground.Sampled.ToVips()).Select(Convert.ToInt32).ToArray();
             var noop = t[2] == 0 || t[3] == 0 || (t[0] == 0 && t[1] == 0 && t[2] == thumb.Width && t[3] == thumb.Height);
 
             Box box;
@@ -74,7 +79,7 @@ public static class Measurer
         }
         catch (VipsException e)
         {
-            throw new PlinthException("measure failed", e);
+            throw new PlinthException($"measure failed: {e.Message.Trim().ReplaceLineEndings(" ")}", e);
         }
     }
 
@@ -102,7 +107,7 @@ public static class Measurer
         }
         catch (VipsException e)
         {
-            throw new PlinthException("measure failed", e);
+            throw new PlinthException($"measure failed: {e.Message.Trim().ReplaceLineEndings(" ")}", e);
         }
     }
 

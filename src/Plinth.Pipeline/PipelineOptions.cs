@@ -12,7 +12,8 @@ public sealed record PipelineOptions(
     string OnFailure,
     int? Concurrency,
     int MaxInFlight = 4,
-    bool NormalizeEnabled = false)
+    bool NormalizeEnabled = false,
+    int MaxPixels = SourceInspector.MaxPixels)
 {
     public const int DefaultMaxInFlight = 4;
 
@@ -35,7 +36,23 @@ public sealed record PipelineOptions(
             // Off unless asked for. The upload route takes a gate slot before it can check a
             // signature, so on a public host it is a way to hold the pipeline with no key;
             // see ApiHost. Ingest callers that hold the bytes turn it on deliberately.
-            NormalizeEnabled: env("PLINTH_ENABLE_NORMALIZE") == "true");
+            NormalizeEnabled: env("PLINTH_ENABLE_NORMALIZE") == "true",
+            MaxPixels: MaxPixelsFrom(env("PLINTH_MAX_PIXELS")));
+    }
+
+    /// <summary>
+    /// The largest source the engine will decode, in pixels; anything over it is refused at
+    /// the header, before a pixel is read. The render decodes at output scale, so this is
+    /// not the size of a normal decode — it bounds the worst case, a whole-frame decoder
+    /// (webp) on a huge frame, of which <see cref="DefaultMaxInFlight"/> can be in flight.
+    /// Roughly: peak ≈ MaxInFlight × (MaxPixels × 4 bytes + MaxBytes) plus the runtime.
+    /// </summary>
+    private static int MaxPixelsFrom(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return SourceInspector.MaxPixels;
+        if (!int.TryParse(raw, out var n) || n < 1)
+            throw new PlinthException("PLINTH_MAX_PIXELS must be an integer of 1 or more");
+        return n;
     }
 
     /// <summary>

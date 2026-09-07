@@ -240,7 +240,7 @@ reported twice.
 
 - Apply EXIF orientation, then strip all metadata.
 - Convert to sRGB using the embedded ICC profile if present.
-- Refuse images over 30 megapixels before decoding (decompression bombs).
+- Refuse images over `PLINTH_MAX_PIXELS` (30 megapixels by default) before decoding (decompression bombs); the runbook has the memory arithmetic for sizing it to a box.
 - Flatten alpha onto the recipe background so there is one ground to measure.
 - Animated formats take the first frame.
 
