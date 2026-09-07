@@ -593,8 +593,12 @@ golden fixtures (a typical 1600×2000 JPEG pack shot) and enforced in CI.
 | Cold start (API) | ≤ 2 s | First tile after scale-up |
 | Rerun over unchanged input | 0 fetches, 0 decodes | The compute argument for CF |
 
-CI runs the fixture benchmark on every pull request and fails if any budget
-regresses by more than 20%.
+CI runs the fixture benchmark on every release and fails if **max output
+bytes** regresses by more than 20% from the committed baseline — the one
+measure that is deterministic. CPU and wall time are reported and gate only
+under `--strict`, since they move with the machine; peak memory is not
+measured at all (the harness reports it as unavailable), so the 64 MB row is a
+design target, not an enforced one.
 
 ### 12.2 Do less work
 

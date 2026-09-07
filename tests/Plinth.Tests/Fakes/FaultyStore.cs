@@ -11,6 +11,7 @@ public sealed class FaultyStore(bool failReads = false, bool failWrites = false)
     public Task<bool> ExistsAsync(string key, CancellationToken ct = default) => Read(() => Inner.ExistsAsync(key, ct), ct);
     public Task<StoredOutput?> TryGetAsync(string key, CancellationToken ct = default) => Read(() => Inner.TryGetAsync(key, ct), ct);
     public Task<ResultRecord?> TryGetRecordAsync(string key, CancellationToken ct = default) => Read(() => Inner.TryGetRecordAsync(key, ct), ct);
+    public Task<byte[]?> TryGetImageAsync(string key, string format, CancellationToken ct = default) => Read(() => Inner.TryGetImageAsync(key, format, ct), ct);
 
     public Task PutAsync(string key, byte[] bytes, ResultRecord record, CancellationToken ct = default)
     {

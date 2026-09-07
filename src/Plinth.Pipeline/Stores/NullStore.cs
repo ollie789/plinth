@@ -9,6 +9,8 @@ public sealed class NullStore : IOutputStore
     public Task<StoredOutput?> TryGetAsync(string key, CancellationToken ct = default) => Task.FromResult<StoredOutput?>(null);
     public Task<ResultRecord?> TryGetRecordAsync(string key, CancellationToken ct = default) => Task.FromResult<ResultRecord?>(null);
 
+    public Task<byte[]?> TryGetImageAsync(string key, string format, CancellationToken ct = default) => Task.FromResult<byte[]?>(null);
+
     public Task PutAsync(string key, byte[] bytes, ResultRecord record, CancellationToken ct = default)
     {
         StoreGuard.RequireStorable(record);

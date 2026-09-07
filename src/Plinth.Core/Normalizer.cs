@@ -3,7 +3,10 @@ using System.Security.Cryptography;
 
 namespace Plinth.Core;
 
-public sealed record NormalizeResult(string Status, byte[]? Output, ResultRecord Record);
+public sealed record NormalizeResult(byte[]? Output, ResultRecord Record)
+{
+    public string Status => Record.Status;
+}
 
 /// <summary>
 /// The one entry point. Pure and deterministic: same bytes and recipe give
@@ -103,10 +106,9 @@ public static class Normalizer
             ground = new GroundRecord(m.Ground.Sampled.ToHex(), m.Ground.CornerSpread, m.Ground.CornersAgree,
                 VerdictScorer.MatchesBackground(m.Ground.Sampled, recipe), Balanced: false);
             trim = new TrimRecord(m.Box.Left, m.Box.Top, m.Box.Width, m.Box.Height, m.TrimIsNoop, Math.Round(m.ContentShareBefore, 4));
-            var v = VerdictScorer.Score(m, info, recipe);
-            verdict = new VerdictRecord(v.PackShot, v.Confidence, v.Reasons);
+            verdict = VerdictScorer.Score(m, info, recipe);
 
-            NormalizeResult Passthrough(string reason) => new("passthrough", source,
+            NormalizeResult Passthrough(string reason) => new(source,
                 new ResultRecord(key, id, Engine.Version, libvips, recipe.Hash, "passthrough", null, reason,
                     src, ground, trim, verdict,
                     new OutputRecord(info.Width, info.Height, source.Length, info.Format),
@@ -119,7 +121,7 @@ public static class Normalizer
             // The verdict decides first. A scene shrunk onto a white card is
             // worse than the scene untouched, so an editorial image is handed
             // back exactly as it arrived.
-            if (mayReturnSource && !v.PackShot) return Passthrough("editorial");
+            if (mayReturnSource && !verdict.PackShot) return Passthrough("editorial");
             // Then the narrower reason, where re-encoding could not change the
             // bytes in any way that matters.
             if (IsPassthrough(info, m, recipe)) return Passthrough("already-normalised");
@@ -134,23 +136,22 @@ public static class Normalizer
             // it; one shot on its own grey cards on that grey, so the extended
             // canvas is seamless rather than a grey box floated on white.
             var canvasBackground = ground.MatchesBackground ? recipe.Background : m.Ground.Sampled;
-            var groundScale = GroundScaleFor(v, m, recipe);
+            var groundScale = GroundScaleFor(verdict, m, recipe);
             if (groundScale is not null) ground = ground with { Balanced = true };
             var rendered = Renderer.Render(source, info, m, recipe, canvasBackground, groundScale);
             tRender = sw.ElapsedMilliseconds;
 
-            var output = new OutputRecord(rendered.Info.Width, rendered.Info.Height, rendered.Info.Bytes, rendered.Info.Format);
             var record = new ResultRecord(key, id, Engine.Version, libvips, recipe.Hash, "ok", null, null,
-                src, ground, trim, verdict, output,
+                src, ground, trim, verdict, rendered.Info,
                 new TimingsRecord(tInspect, tMeasure, 0, tRender, 0, total.ElapsedMilliseconds));
-            return new NormalizeResult("ok", rendered.Bytes, record);
+            return new NormalizeResult(rendered.Bytes, record);
         }
         catch (Exception e) when (e is PlinthException or NetVips.VipsException)
         {
             var record = new ResultRecord(key, id, Engine.Version, libvips, recipe.Hash, "failed", e.Message, null,
                 src, ground, trim, verdict, null,
                 new TimingsRecord(tInspect, tMeasure, 0, tRender, 0, total.ElapsedMilliseconds));
-            return new NormalizeResult("failed", null, record);
+            return new NormalizeResult(null, record);
         }
     }
 
@@ -174,7 +175,7 @@ public static class Normalizer
     /// on any channel is refused outright.
     /// </para>
     /// </summary>
-    private static double[]? GroundScaleFor(Verdict v, Measurement m, Recipe recipe)
+    private static double[]? GroundScaleFor(VerdictRecord v, Measurement m, Recipe recipe)
     {
         if (!v.PackShot) return null;
         var sampled = m.Ground.Sampled;
@@ -209,21 +210,17 @@ public static class Normalizer
     /// </summary>
     private static bool IsFramed(SourceInfo info, Measurement m, Recipe recipe)
     {
-        var (w, h) = DisplaySize(info);
+        var (w, h) = info.Display;
         if (Math.Min(m.Box.Width / (double)w, m.Box.Height / (double)h) < FramedFill) return false;
         var canvasAspect = recipe.CanvasWidth / (double)recipe.CanvasHeight;
         return w / (double)h <= canvasAspect * (1 + FramedAspectSlack);
     }
 
-    /// <summary>Source dimensions as they are displayed, with orientation applied.</summary>
-    private static (int Width, int Height) DisplaySize(SourceInfo info) =>
-        info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
-
     /// <summary>
     /// True only when re-encoding could not change the bytes in any way that matters:
-    /// same format, exactly the canvas size, no alpha, no orientation to apply, no
-    /// metadata to strip, the recipe's ground, and the content already at the
-    /// recipe's share. Anything less and the source is rendered.
+    /// same format, exactly the canvas width and within 1% of its aspect, no alpha, no
+    /// orientation to apply, no metadata to strip, the recipe's ground, and the content
+    /// already at the recipe's share. Anything less and the source is rendered.
     /// </summary>
     private static bool IsPassthrough(SourceInfo info, Measurement m, Recipe recipe)
     {
@@ -231,7 +228,7 @@ public static class Normalizer
         // An output carries no orientation tag and no metadata; a source with either
         // would change on re-encode, so it is not already normalised.
         if (info.Orientation != 1 || info.HasMetadata) return false;
-        var (w, h) = DisplaySize(info);
+        var (w, h) = info.Display;
         var srcAspect = w / (double)h;
         var want = recipe.CanvasWidth / (double)recipe.CanvasHeight;
         if (Math.Abs(srcAspect - want) / want > 0.01) return false;

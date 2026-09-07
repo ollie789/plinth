@@ -77,10 +77,12 @@ spellings of one source are fetched and reported once.
 
 Successful and failed image responses alike carry `X-Plinth-Key`,
 `X-Plinth-Status`, `X-Plinth-Cache: hit|miss` (whether the result came from
-the configured store), `X-Plinth-Verdict` and `X-Plinth-Confidence`. A served
-image also gets `Content-Type`, `ETag` (the output key in quotes — the key
-already identifies the exact bytes) and
-`Cache-Control: public, max-age=31536000, immutable`. Everything else — the
+the configured store), `X-Plinth-Verdict` and `X-Plinth-Confidence`. An image
+served by `/v1/image` (GET or HEAD) also gets `Content-Type`, `ETag` (the output
+key in quotes — the key already identifies the exact bytes) and
+`Cache-Control: public, max-age=31536000, immutable`; `/v1/normalize` returns
+its image with `Content-Type` alone, since a caller that supplied the bytes has
+no URL to cache them under. Everything else — the
 302, the 502, the 422, and every 400 and 403 — carries
 `Cache-Control: no-store`, so a failure is never cached anywhere.
 
@@ -122,8 +124,9 @@ const url = `/v1/image?src=${encodeURIComponent(src)}&sig=${sig}`;
 A recipe is the small set of choices that define an output. It serialises to
 canonical JSON (sorted keys, no whitespace) and hashes into every output key,
 so changing any field gives every image a new key rather than a stale tile.
-`--recipe` and `?recipe=` take a name from `PLINTH_RECIPES` or a path to a
-recipe JSON file; a partial object inherits the rest from these defaults.
+`--recipe` takes a name from `PLINTH_RECIPES` or a path to a recipe JSON file;
+`?recipe=` takes a name only. A partial object inherits the rest from these
+defaults.
 
 | Field | Default | Meaning |
 |---|---|---|

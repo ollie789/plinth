@@ -9,9 +9,6 @@ public static class Engine
     /// </summary>
     public const string Version = "1.5";
 
-    /// <summary>Environment override for the worker-thread count, read once at first Init.</summary>
-    public const string ConcurrencyVariable = "PLINTH_CONCURRENCY";
-
     private static readonly object Gate = new();
     private static bool _initialised;
 
@@ -25,8 +22,8 @@ public static class Engine
     /// Configure libvips once. Safe to call repeatedly. An explicit
     /// <paramref name="concurrency"/> is applied every time, because the worker
     /// count is safe to change between operations; null means "leave it as it is"
-    /// once initialised. Unset, it comes from <see cref="ConcurrencyVariable"/>,
-    /// else from the processor count.
+    /// once initialised, and the processor count before that. The front doors
+    /// pass what <c>PLINTH_CONCURRENCY</c> says; the engine does not read it itself.
     /// </summary>
     public static void Init(int? concurrency = null)
     {
@@ -40,7 +37,7 @@ public static class Engine
             // The operation cache only helps when the same operation is
             // repeated on the same image. Each image here is seen once.
             NetVips.Cache.Max = 0;
-            Apply(concurrency ?? FromEnvironment() ?? Environment.ProcessorCount);
+            Apply(concurrency ?? Environment.ProcessorCount);
             _initialised = true;
         }
     }
@@ -68,9 +65,4 @@ public static class Engine
             .Copy(interpretation: NetVips.Enums.Interpretation.Srgb);
         _ = Normalizer.Normalize(image.JpegsaveBuffer(q: 90), Recipe.Default, "plinth:warmup");
     }
-
-    private static int? FromEnvironment() =>
-        int.TryParse(Environment.GetEnvironmentVariable(ConcurrencyVariable),
-            System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n)
-            ? n : null;
 }

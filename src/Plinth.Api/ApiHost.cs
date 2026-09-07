@@ -9,7 +9,7 @@ namespace Plinth.Api;
 /// <summary>Builds the API so tests and the CLI's `plinth api` can host it the same way.</summary>
 public static class ApiHost
 {
-    public const string ImmutableCache = "public, max-age=31536000, immutable";
+    public const string ImmutableCache = StoreLayout.ImmutableCache;
 
     /// <summary>Every response that is not a servable image: never let a CDN keep one.</summary>
     public const string NoCache = "no-store";
@@ -104,20 +104,16 @@ public static class ApiHost
         {
             if (Rejected(http, src, sig, o) is { } bad) return bad;
 
-            await gate.WaitAsync(ct);
-            try
+            return await Gated(gate, ct, async () =>
             {
                 var started = Stopwatch.GetTimestamp();
                 var result = await pipeline.ProcessUrlAsync(src!, recipe, ct);
                 Observe(log, stats, "/v1/image", src!, result, started);
                 Stamp(http, result);
                 if (result.Status == "failed")
-                {
-                    http.Response.Headers.CacheControl = NoCache;
-                    return o.OnFailure == "redirect"
+                    return NoStore(http, o.OnFailure == "redirect"
                         ? Results.Redirect(src!, permanent: false)
-                        : Results.Text(result.Record.ToJson(), "application/json", statusCode: StatusCodes.Status502BadGateway);
-                }
+                        : Results.Text(result.Record.ToJson(), "application/json", statusCode: StatusCodes.Status502BadGateway));
 
                 http.Response.Headers.CacheControl = ImmutableCache;
                 // The key already identifies the exact bytes (source content + recipe + engine),
@@ -131,8 +127,7 @@ public static class ApiHost
                     return Results.Empty;
                 }
                 return Results.Bytes(result.Bytes!, mime);
-            }
-            finally { gate.Release(); }
+            });
         });
 
         app.MapGet("/v1/inspect", async (string? src, string? recipe, string? sig, PlinthPipeline pipeline, PipelineOptions o,
@@ -140,16 +135,13 @@ public static class ApiHost
         {
             if (Rejected(http, src, sig, o) is { } bad) return bad;
 
-            await gate.WaitAsync(ct);
-            try
+            return await Gated(gate, ct, async () =>
             {
                 var started = Stopwatch.GetTimestamp();
                 var result = await pipeline.InspectUrlAsync(src!, recipe, ct);
                 Observe(log, stats, "/v1/inspect", src!, result, started);
-                http.Response.Headers.CacheControl = NoCache;
-                return Results.Text(result.Record.ToJson(), "application/json");
-            }
-            finally { gate.Release(); }
+                return NoStore(http, Results.Text(result.Record.ToJson(), "application/json"));
+            });
         });
 
         // The gate is taken before the body is read, not after: a queued upload that already
@@ -163,8 +155,7 @@ public static class ApiHost
         app.MapPost("/v1/normalize", async (string? recipe, PlinthPipeline pipeline, PipelineOptions o, SemaphoreSlim gate,
                                             ApiStats stats, ILogger log, HttpContext http, CancellationToken ct) =>
         {
-            await gate.WaitAsync(ct);
-            try
+            return await Gated(gate, ct, async () =>
             {
                 using var ms = new MemoryStream();
                 var buffer = new byte[81920];
@@ -186,13 +177,9 @@ public static class ApiHost
                 Observe(log, stats, "/v1/normalize", null, result, started);
                 Stamp(http, result);
                 if (result.Status == "failed")
-                {
-                    http.Response.Headers.CacheControl = NoCache;
-                    return Results.Text(result.Record.ToJson(), "application/json", statusCode: StatusCodes.Status422UnprocessableEntity);
-                }
+                    return NoStore(http, Results.Text(result.Record.ToJson(), "application/json", statusCode: StatusCodes.Status422UnprocessableEntity));
                 return Results.Bytes(result.Bytes!, ImageFormats.MimeTypeFor(result.Record.Output!.Format));
-            }
-            finally { gate.Release(); }
+            });
         });
     }
 
@@ -210,6 +197,14 @@ public static class ApiHost
         if (!Uri.TryCreate(src, UriKind.Absolute, out var uri) || !o.Fetch.Allows(uri))
             return NoStore(http, Results.BadRequest(new { error = "source not allowed" }));
         return null;
+    }
+
+    /// <summary>One in-flight slot for the whole of <paramref name="body"/>, released whatever happens.</summary>
+    private static async Task<IResult> Gated(SemaphoreSlim gate, CancellationToken ct, Func<Task<IResult>> body)
+    {
+        await gate.WaitAsync(ct);
+        try { return await body(); }
+        finally { gate.Release(); }
     }
 
     private static IResult NoStore(HttpContext http, IResult result)

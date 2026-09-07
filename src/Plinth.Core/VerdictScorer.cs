@@ -1,7 +1,5 @@
 namespace Plinth.Core;
 
-public sealed record Verdict(bool PackShot, double Confidence, IReadOnlyList<string> Reasons);
-
 /// <summary>
 /// Is this a flat-ground pack shot, or an editorial image — a model on a
 /// backdrop, a room, a rug in a lounge — that carding would ruin? The score
@@ -26,9 +24,9 @@ public static class VerdictScorer
     public static bool MatchesBackground(Rgb ground, Recipe recipe) =>
         ground.Distance(recipe.Background) <= BackgroundTolerance;
 
-    public static Verdict Score(Measurement m, SourceInfo info, Recipe recipe)
+    public static VerdictRecord Score(Measurement m, SourceInfo info, Recipe recipe)
     {
-        var (w, h) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
+        var (w, h) = info.Display;
         var reasons = new List<string>();
         var score = 1.0;
 
@@ -60,6 +58,6 @@ public static class VerdictScorer
         if (aspect > 6 || aspect < 1.0 / 6) Fail("thin-strip", 0.2);
 
         var confidence = Math.Round(Math.Clamp(score, 0, 1), 2);
-        return new Verdict(confidence >= 0.5, confidence, reasons);
+        return new VerdictRecord(confidence >= 0.5, confidence, reasons);
     }
 }

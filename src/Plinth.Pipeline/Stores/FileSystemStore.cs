@@ -10,15 +10,10 @@ public sealed class FileSystemStore(string root) : IOutputStore
     public Task<bool> ExistsAsync(string key, CancellationToken ct = default) =>
         Task.FromResult(File.Exists(Path.Combine(Root, StoreLayout.RecordPath(key))));
 
-    public async Task<StoredOutput?> TryGetAsync(string key, CancellationToken ct = default)
+    public async Task<byte[]?> TryGetImageAsync(string key, string format, CancellationToken ct = default)
     {
-        var recordPath = Path.Combine(Root, StoreLayout.RecordPath(key));
-        if (!File.Exists(recordPath)) return null;
-        var record = ResultRecord.FromJson(await File.ReadAllTextAsync(recordPath, ct));
-        if (record.Output is null) return null;
-        var imagePath = Path.Combine(Root, StoreLayout.ImagePath(key, record.Output.Format));
-        if (!File.Exists(imagePath)) return null;
-        return new StoredOutput(await File.ReadAllBytesAsync(imagePath, ct), record);
+        var imagePath = Path.Combine(Root, StoreLayout.ImagePath(key, format));
+        return File.Exists(imagePath) ? await File.ReadAllBytesAsync(imagePath, ct) : null;
     }
 
     public async Task<ResultRecord?> TryGetRecordAsync(string key, CancellationToken ct = default)
