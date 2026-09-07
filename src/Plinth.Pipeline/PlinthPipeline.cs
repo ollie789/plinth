@@ -8,9 +8,16 @@ namespace Plinth.Pipeline;
 /// <c>StoreFault</c> is set when the store threw on the way: the read was treated as a miss,
 /// or the write was skipped, and the image was produced anyway. The front door logs it.
 /// </summary>
-public sealed record PipelineResult(string Status, byte[]? Bytes, ResultRecord Record, bool FromStore, string? StoreFault = null);
+public sealed record PipelineResult(byte[]? Bytes, ResultRecord Record, bool FromStore, string? StoreFault = null)
+{
+    public string Status => Record.Status;
+}
 
-/// <summary>Check the store by key, fetch, normalise, store. The one flow both front doors share.</summary>
+/// <summary>
+/// Check the store by key, fetch, normalise, store: the on-demand flow behind the HTTP API
+/// and <c>plinth inspect</c>. <c>plinth run</c> streams the same steps through its own worker
+/// pool, so a batch is bounded by its workers and not by this one call at a time.
+/// </summary>
 public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, RecipeCatalog recipes, int maxPixels = SourceInspector.MaxPixels)
 {
     public RecipeCatalog Recipes { get; } = recipes;
@@ -40,26 +47,26 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
 
         string sourceId;
         try { sourceId = SourceId.FromUrl(url); }
-        catch (PlinthException e) { return Failed(url, url, recipe, e.Message); }
+        catch (PlinthException e) { return Failed(url, recipe, e.Message); }
 
         var key = OutputKey.Compute(sourceId, recipe);
         string? fault;
         if (recordOnly)
         {
             var (record, f) = await Guarded(() => store.TryGetRecordAsync(key, ct));
-            if (record is not null) return new PipelineResult(record.Status, null, record, FromStore: true);
+            if (record is not null) return new PipelineResult(null, record, FromStore: true);
             fault = f;
         }
         else
         {
             var (cached, f) = await Guarded(() => store.TryGetAsync(key, ct));
-            if (cached is not null) return new PipelineResult(cached.Record.Status, cached.Bytes, cached.Record, FromStore: true);
+            if (cached is not null) return new PipelineResult(cached.Bytes, cached.Record, FromStore: true);
             fault = f;
         }
 
         byte[] bytes;
         try { bytes = (await fetcher.FetchAsync(url, ct)).Bytes; }
-        catch (PlinthException e) { return new PipelineResult("failed", null, ResultRecord.Failed(key, sourceId, recipe, e.Message), false, fault); }
+        catch (PlinthException e) { return new PipelineResult(null, ResultRecord.Failed(key, sourceId, recipe, e.Message), false, fault); }
 
         return await NormalizeAndStoreAsync(bytes, recipe, sourceId, ct, fault);
     }
@@ -74,7 +81,7 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
 
         var key = OutputKey.Compute(id, recipe);
         var (cached, fault) = await Guarded(() => store.TryGetAsync(key, ct));
-        if (cached is not null) return new PipelineResult(cached.Record.Status, cached.Bytes, cached.Record, FromStore: true);
+        if (cached is not null) return new PipelineResult(cached.Bytes, cached.Record, FromStore: true);
         return await NormalizeAndStoreAsync(bytes, recipe, id, ct, fault);
     }
 
@@ -86,7 +93,7 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
             try { await store.PutAsync(result.Record.Key, result.Output!, result.Record, ct); }
             catch (Exception e) when (e is not OperationCanceledException) { fault = fault is null ? Describe(e) : $"{fault}; {Describe(e)}"; }
         }
-        return new PipelineResult(result.Status, result.Output, result.Record, FromStore: false, fault);
+        return new PipelineResult(result.Output, result.Record, FromStore: false, fault);
     }
 
     /// <summary>
@@ -108,8 +115,8 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
         return line.Length == 0 ? e.GetType().Name : $"{e.GetType().Name}: {line}";
     }
 
-    private static PipelineResult Failed(string sourceId, string keySource, Recipe recipe, string error) =>
-        new("failed", null, ResultRecord.Failed(OutputKey.Compute(keySource, recipe), sourceId, recipe, error), false);
+    private static PipelineResult Failed(string sourceId, Recipe recipe, string error) =>
+        new(null, ResultRecord.Failed(OutputKey.Compute(sourceId, recipe), sourceId, recipe, error), false);
 
     /// <summary>
     /// An unknown recipe name never had a real recipe to hash, so the key cannot be
@@ -120,6 +127,6 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
     private static PipelineResult UnknownRecipeResult(string sourceId, string? name, string error)
     {
         var key = OutputKey.Compute(sourceId, "unknown-recipe:" + name, Engine.Version);
-        return new PipelineResult("failed", null, ResultRecord.Failed(key, sourceId, Recipe.Default, error), false);
+        return new PipelineResult(null, ResultRecord.Failed(key, sourceId, Recipe.Default, error), false);
     }
 }

@@ -11,7 +11,7 @@ public sealed record PipelineOptions(
     string? SigningKey,
     string OnFailure,
     int? Concurrency,
-    int MaxInFlight = 4,
+    int MaxInFlight = PipelineOptions.DefaultMaxInFlight,
     bool NormalizeEnabled = false,
     int MaxPixels = SourceInspector.MaxPixels)
 {
@@ -76,7 +76,7 @@ public sealed record PipelineOptions(
     /// </summary>
     private static int MaxBytesFrom(string? raw)
     {
-        if (string.IsNullOrEmpty(raw)) return new FetchPolicy(new HashSet<string>()).MaxBytes;
+        if (string.IsNullOrEmpty(raw)) return FetchPolicy.DefaultMaxBytes;
         if (!int.TryParse(raw, out var n) || n < 1)
             throw new PlinthException("PLINTH_MAX_BYTES must be an integer of 1 or more");
         return n;

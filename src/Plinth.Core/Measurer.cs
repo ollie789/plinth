@@ -44,7 +44,7 @@ public static class Measurer
         {
             var ground = SampleGround(thumb, recipe.TrimThreshold);
 
-            var (fullW, fullH) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
+            var (fullW, fullH) = info.Display;
             // Independent per-axis scales: the thumbnail is fit within MeasureSide x MeasureSide,
             // so whichever axis is the limiting one rounds to an exact ratio while the other axis
             // carries the rounding error. A single shared scale drifts on that non-limiting axis

@@ -95,6 +95,7 @@ public static class RunCommand
         public Task<bool> ExistsAsync(string key, CancellationToken ct = default) => Watched(inner.ExistsAsync(key, ct));
         public Task<StoredOutput?> TryGetAsync(string key, CancellationToken ct = default) => Watched(inner.TryGetAsync(key, ct));
         public Task<ResultRecord?> TryGetRecordAsync(string key, CancellationToken ct = default) => Watched(inner.TryGetRecordAsync(key, ct));
+        public Task<byte[]?> TryGetImageAsync(string key, string format, CancellationToken ct = default) => Watched(inner.TryGetImageAsync(key, format, ct));
 
         public async Task PutAsync(string key, byte[] bytes, ResultRecord record, CancellationToken ct = default)
         {

@@ -7,7 +7,6 @@ public sealed record StoredOutput(byte[] Bytes, ResultRecord Record);
 public interface IOutputStore
 {
     Task<bool> ExistsAsync(string key, CancellationToken ct = default);
-    Task<StoredOutput?> TryGetAsync(string key, CancellationToken ct = default);
 
     /// <summary>
     /// The record alone. `/v1/inspect` and any caller that only wants the verdict or the
@@ -15,11 +14,33 @@ public interface IOutputStore
     /// download of the one part of the pair nobody is going to look at.
     /// </summary>
     Task<ResultRecord?> TryGetRecordAsync(string key, CancellationToken ct = default);
+
+    /// <summary>The image alone, by the format its record names; null if the store does not hold it.</summary>
+    Task<byte[]?> TryGetImageAsync(string key, string format, CancellationToken ct = default);
+
     Task PutAsync(string key, byte[] bytes, ResultRecord record, CancellationToken ct = default);
+
+    /// <summary>
+    /// Record first, then the image it names. Every store composes the same two reads the
+    /// same way, so the composition lives here once; a store overrides it only to count.
+    /// </summary>
+    async Task<StoredOutput?> TryGetAsync(string key, CancellationToken ct = default)
+    {
+        var record = await TryGetRecordAsync(key, ct);
+        if (record?.Output is null) return null;
+        var bytes = await TryGetImageAsync(key, record.Output.Format, ct);
+        return bytes is null ? null : new StoredOutput(bytes, record);
+    }
 }
 
 public static class StoreLayout
 {
+    /// <summary>
+    /// On every stored tile and every served one. A key names exact bytes, so what it
+    /// points at never changes; a consumer that must see a new engine changes the URL.
+    /// </summary>
+    public const string ImmutableCache = "public, max-age=31536000, immutable";
+
     public static string RecordPath(string key) => $"{Validated(key)[..2]}/{key}.json";
     public static string ImagePath(string key, string format) => $"{Validated(key)[..2]}/{key}.{ImageFormats.ExtensionFor(format)}";
 

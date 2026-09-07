@@ -2,9 +2,7 @@ using NetVips;
 
 namespace Plinth.Core;
 
-public sealed record OutputInfo(int Width, int Height, int Bytes, string Format);
-
-public sealed record Rendered(byte[] Bytes, OutputInfo Info, int DecodeWidth, int DecodeHeight);
+public sealed record Rendered(byte[] Bytes, OutputRecord Info);
 
 /// <summary>
 /// Decodes only as many pixels as the content box needs, crops to the
@@ -41,7 +39,7 @@ public static class Renderer
 
     public static (int w, int h) DecodeSizeFor(SourceInfo info, Measurement m, Recipe recipe)
     {
-        var (w, h) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
+        var (w, h) = info.Display;
         // The same wide-aware box the render fits into, or a wide item would be
         // decoded at too few pixels to fill the width it is about to be given.
         var s = Math.Max(ContentBoxWidthFor(m, recipe) / (double)m.Box.Width, recipe.ContentBoxHeight / (double)m.Box.Height);
@@ -66,7 +64,7 @@ public static class Renderer
         double[]? groundScale = null)
     {
         Engine.Init();
-        var (fullW, fullH) = info.Orientation is >= 5 and <= 8 ? (info.Height, info.Width) : (info.Width, info.Height);
+        var (fullW, fullH) = info.Display;
         var (dw, dh) = DecodeSizeFor(info, m, recipe);
 
         Image img;
@@ -104,9 +102,6 @@ public static class Renderer
                 img.Dispose();
                 img = balanced;
             }
-
-            var decodeW = img.Width;
-            var decodeH = img.Height;
 
             if (!m.TrimIsNoop)
             {
@@ -149,7 +144,7 @@ public static class Renderer
                 _ => throw new PlinthException($"unsupported output format '{recipe.Format}'"),
             };
 
-            return new Rendered(bytes, new OutputInfo(recipe.CanvasWidth, recipe.CanvasHeight, bytes.Length, recipe.Format), decodeW, decodeH);
+            return new Rendered(bytes, new OutputRecord(recipe.CanvasWidth, recipe.CanvasHeight, bytes.Length, recipe.Format));
         }
         catch (VipsException e)
         {

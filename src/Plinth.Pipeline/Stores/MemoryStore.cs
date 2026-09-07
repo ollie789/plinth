@@ -30,6 +30,9 @@ public sealed class MemoryStore : IOutputStore
         return Task.FromResult(_items.TryGetValue(key, out var v) ? v.Record : null);
     }
 
+    public Task<byte[]?> TryGetImageAsync(string key, string format, CancellationToken ct = default) =>
+        Task.FromResult(_items.TryGetValue(key, out var v) ? v.Bytes : null);
+
     public Task PutAsync(string key, byte[] bytes, ResultRecord record, CancellationToken ct = default)
     {
         StoreGuard.RequireStorable(record);

@@ -18,8 +18,8 @@ public sealed record TimingsRecord(long Inspect, long Measure, long Decode, long
 /// <c>LibvipsVersion</c> records which libvips produced it; unlike
 /// <c>EngineVersion</c> it is not part of the key, so a mismatch is visible
 /// without invalidating anything. <c>PassthroughReason</c> says why the source
-/// was returned untouched — <c>already-normalised</c> or <c>editorial</c> — and
-/// is null for every other status.
+/// was returned untouched — <c>already-normalised</c>, <c>editorial</c> or
+/// <c>framed</c> — and is null for every other status.
 /// </summary>
 public sealed record ResultRecord(
     string Key,

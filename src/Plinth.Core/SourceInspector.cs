@@ -4,7 +4,11 @@ namespace Plinth.Core;
 
 /// <summary><paramref name="HasMetadata"/> is true when the source carries EXIF, XMP, IPTC or an ICC profile.</summary>
 public sealed record SourceInfo(string Format, int Width, int Height, bool HasAlpha, int Pages, int Orientation,
-    bool HasMetadata = false);
+    bool HasMetadata = false)
+{
+    /// <summary>Dimensions as displayed: EXIF orientations 5–8 turn the frame a quarter turn.</summary>
+    public (int Width, int Height) Display => Orientation is >= 5 and <= 8 ? (Height, Width) : (Width, Height);
+}
 
 /// <summary>Header facts about a source, read without decoding pixels.</summary>
 public static class SourceInspector
