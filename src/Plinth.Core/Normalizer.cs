@@ -59,7 +59,8 @@ public static class Normalizer
     /// <inheritdoc cref="GroundBalanceMinScale"/>
     public const double GroundBalanceMaxScale = 1.25;
 
-    public static NormalizeResult Normalize(byte[] source, Recipe recipe, string? sourceId = null, CancellationToken ct = default)
+    public static NormalizeResult Normalize(byte[] source, Recipe recipe, string? sourceId = null, CancellationToken ct = default,
+        int maxPixels = SourceInspector.MaxPixels)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(recipe);
@@ -90,7 +91,7 @@ public static class Normalizer
             key = OutputKey.Compute(id, recipe);
 
             var sw = Stopwatch.StartNew();
-            var info = SourceInspector.Inspect(source);
+            var info = SourceInspector.Inspect(source, maxPixels);
             ct.ThrowIfCancellationRequested();
             tInspect = sw.ElapsedMilliseconds;
             src = new SourceRecord(sha, source.Length, info.Width, info.Height, info.Format, info.HasAlpha, info.Orientation);

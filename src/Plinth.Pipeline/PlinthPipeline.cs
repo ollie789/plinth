@@ -11,7 +11,7 @@ namespace Plinth.Pipeline;
 public sealed record PipelineResult(string Status, byte[]? Bytes, ResultRecord Record, bool FromStore, string? StoreFault = null);
 
 /// <summary>Check the store by key, fetch, normalise, store. The one flow both front doors share.</summary>
-public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, RecipeCatalog recipes)
+public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, RecipeCatalog recipes, int maxPixels = SourceInspector.MaxPixels)
 {
     public RecipeCatalog Recipes { get; } = recipes;
 
@@ -80,7 +80,7 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
 
     private async Task<PipelineResult> NormalizeAndStoreAsync(byte[] bytes, Recipe recipe, string sourceId, CancellationToken ct, string? fault)
     {
-        var result = Normalizer.Normalize(bytes, recipe, sourceId, ct);
+        var result = Normalizer.Normalize(bytes, recipe, sourceId, ct, maxPixels);
         if (result.Status is "ok" or "passthrough")
         {
             try { await store.PutAsync(result.Record.Key, result.Output!, result.Record, ct); }

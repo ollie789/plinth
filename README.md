@@ -236,6 +236,7 @@ kept nothing — each item's line says `failed`, and the run says so too), and
 | `PLINTH_MAX_INFLIGHT` | positive integer | `4` (requests beyond it queue on the API's gate) |
 | `PLINTH_MAX_BYTES` | positive integer | `20971520` (20 MB) — the largest source the fetcher will pull |
 | `PLINTH_ENABLE_NORMALIZE` | `true` | unset — `POST /v1/normalize` is not mapped. It takes a gate slot before it can check a signature, so a public host should only offer it on purpose |
+| `PLINTH_MAX_PIXELS` | positive integer | `30000000` (30 MP) — refused at the header, before a pixel is decoded. Peak memory is roughly `MaxInFlight × (MaxPixels × 4 + MaxBytes)` plus the runtime; size it to the box |
 | `PLINTH_RECIPES` | path to a JSON map of named recipes | unset (only the built-in `default` recipe) |
 | `PLINTH_CONCURRENCY` | positive integer | processor count (the API and `plinth inspect`; `plinth run` always runs libvips at 1 per `--concurrency` process worker) |
 | `PLINTH_AZURE_STORAGE_CONNECTION` | Azure Storage connection string | unset |

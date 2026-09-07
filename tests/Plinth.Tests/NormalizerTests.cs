@@ -166,6 +166,21 @@ public class NormalizerTests
         Assert.Equal(portrait, r.Output);
     }
 
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 2)]
+    [InlineData(3000, 5)]
+    [InlineData(5, 3000)]
+    public void A_source_smaller_than_the_trim_window_is_not_a_failure(int w, int h)
+    {
+        // Feeds carry tracking pixels and divider strips. find_trim refuses a frame under its
+        // 3x3 window, and that used to surface as an opaque "measure failed" for a valid image.
+        using var img = (NetVips.Image.Black(w, h, bands: 3) + new double[] { 255, 255, 255 }).Cast(NetVips.Enums.BandFormat.Uchar);
+        var r = Normalizer.Normalize(img.PngsaveBuffer(), Recipe.Default);
+        Assert.NotEqual("failed", r.Status);
+        Assert.Null(r.Record.Error);
+    }
+
     [Fact]
     public void A_padded_pack_shot_is_still_carded()
     {

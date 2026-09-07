@@ -123,6 +123,16 @@ public class PlinthPipelineTests
     }
 
     [Fact]
+    public async Task The_pixel_cap_is_the_pipelines_and_refuses_at_the_header()
+    {
+        var fetcher = new FakeFetcher().With(Url, Shot());
+        var p = new PlinthPipeline(fetcher, new MemoryStore(), RecipeCatalog.DefaultOnly, maxPixels: 10_000);
+        var r = await p.ProcessUrlAsync(Url, null);
+        Assert.Equal("failed", r.Status);
+        Assert.Contains("exceeds 10000 pixels", r.Record.Error);
+    }
+
+    [Fact]
     public async Task Bytes_path_keys_by_content_when_no_source_id_is_given()
     {
         var p = new PlinthPipeline(new FakeFetcher(), new MemoryStore(), RecipeCatalog.DefaultOnly);

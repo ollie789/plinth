@@ -50,7 +50,7 @@ public static class CliApp
             {
                 var options = PipelineOptions.FromEnvironment(Environment.GetEnvironmentVariable);
                 Engine.Init(options.Concurrency);
-                var pipeline = new PlinthPipeline(fetchers(options), new Pipeline.Stores.NullStore(), options.Recipes);
+                var pipeline = new PlinthPipeline(fetchers(options), new Pipeline.Stores.NullStore(), options.Recipes, options.MaxPixels);
                 var recipeName = pr.GetValue(recipeOpt);
                 var target = pr.GetValue(pathArg)!;
                 var result = target.StartsWith("https://", StringComparison.OrdinalIgnoreCase)

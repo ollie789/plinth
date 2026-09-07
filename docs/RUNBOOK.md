@@ -144,6 +144,22 @@ tile client-side would leave the claim counting products nobody can see.
    check that covers the whole chain; everything upstream can look right while
    the shopper still gets a stale image.
 
+## Sizing the box
+
+The render decodes at output scale, not source scale, and the measurer works
+on a 512 px copy, so a normal image costs far less than its pixel count. The
+worst case is a whole-frame decoder — webp — on a frame at the cap, with
+`PLINTH_MAX_INFLIGHT` of them in flight at once:
+
+    peak ≈ MaxInFlight × (MaxPixels × 4 bytes + MaxBytes) + ~150 MB runtime
+
+At the defaults (4 × (30 MP × 4 + 20 MB)) that is about 700 MB, which fits a
+1 GiB container on paper and not by much. Production runs
+`PLINTH_MAX_PIXELS=20000000`: every image the catalogue has shipped is under
+18.4 MP, and 20 MP brings the worst case to about 550 MB. Anything over the cap
+is refused at the header and, under `PLINTH_ON_FAILURE=redirect`, served
+uncarded from the source — a fallback, not a broken tile.
+
 ## Secrets
 
 The signing key lives in `deploy/azure/.state/signing-key`, git-ignored, and is
