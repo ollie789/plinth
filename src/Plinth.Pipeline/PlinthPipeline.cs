@@ -4,7 +4,11 @@ using Plinth.Pipeline.Stores;
 
 namespace Plinth.Pipeline;
 
-public sealed record PipelineResult(string Status, byte[]? Bytes, ResultRecord Record, bool FromStore);
+/// <summary>
+/// <c>StoreFault</c> is set when the store threw on the way: the read was treated as a miss,
+/// or the write was skipped, and the image was produced anyway. The front door logs it.
+/// </summary>
+public sealed record PipelineResult(string Status, byte[]? Bytes, ResultRecord Record, bool FromStore, string? StoreFault = null);
 
 /// <summary>Check the store by key, fetch, normalise, store. The one flow both front doors share.</summary>
 public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, RecipeCatalog recipes)
@@ -39,22 +43,25 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
         catch (PlinthException e) { return Failed(url, url, recipe, e.Message); }
 
         var key = OutputKey.Compute(sourceId, recipe);
+        string? fault;
         if (recordOnly)
         {
-            var record = await store.TryGetRecordAsync(key, ct);
+            var (record, f) = await Guarded(() => store.TryGetRecordAsync(key, ct));
             if (record is not null) return new PipelineResult(record.Status, null, record, FromStore: true);
+            fault = f;
         }
         else
         {
-            var cached = await store.TryGetAsync(key, ct);
+            var (cached, f) = await Guarded(() => store.TryGetAsync(key, ct));
             if (cached is not null) return new PipelineResult(cached.Record.Status, cached.Bytes, cached.Record, FromStore: true);
+            fault = f;
         }
 
         byte[] bytes;
         try { bytes = (await fetcher.FetchAsync(url, ct)).Bytes; }
-        catch (PlinthException e) { return new PipelineResult("failed", null, ResultRecord.Failed(key, sourceId, recipe, e.Message), false); }
+        catch (PlinthException e) { return new PipelineResult("failed", null, ResultRecord.Failed(key, sourceId, recipe, e.Message), false, fault); }
 
-        return await NormalizeAndStoreAsync(bytes, recipe, sourceId, ct);
+        return await NormalizeAndStoreAsync(bytes, recipe, sourceId, ct, fault);
     }
 
     public async Task<PipelineResult> ProcessBytesAsync(byte[] bytes, string? recipeName, string? sourceId, CancellationToken ct = default)
@@ -66,17 +73,39 @@ public sealed class PlinthPipeline(ISourceFetcher fetcher, IOutputStore store, R
         catch (PlinthException e) { return UnknownRecipeResult(id, recipeName, e.Message); }
 
         var key = OutputKey.Compute(id, recipe);
-        var cached = await store.TryGetAsync(key, ct);
+        var (cached, fault) = await Guarded(() => store.TryGetAsync(key, ct));
         if (cached is not null) return new PipelineResult(cached.Record.Status, cached.Bytes, cached.Record, FromStore: true);
-        return await NormalizeAndStoreAsync(bytes, recipe, id, ct);
+        return await NormalizeAndStoreAsync(bytes, recipe, id, ct, fault);
     }
 
-    private async Task<PipelineResult> NormalizeAndStoreAsync(byte[] bytes, Recipe recipe, string sourceId, CancellationToken ct)
+    private async Task<PipelineResult> NormalizeAndStoreAsync(byte[] bytes, Recipe recipe, string sourceId, CancellationToken ct, string? fault)
     {
         var result = Normalizer.Normalize(bytes, recipe, sourceId, ct);
         if (result.Status is "ok" or "passthrough")
-            await store.PutAsync(result.Record.Key, result.Output!, result.Record, ct);
-        return new PipelineResult(result.Status, result.Output, result.Record, FromStore: false);
+        {
+            try { await store.PutAsync(result.Record.Key, result.Output!, result.Record, ct); }
+            catch (Exception e) when (e is not OperationCanceledException) { fault = fault is null ? Describe(e) : $"{fault}; {Describe(e)}"; }
+        }
+        return new PipelineResult(result.Status, result.Output, result.Record, FromStore: false, fault);
+    }
+
+    /// <summary>
+    /// The store is a cache, not a dependency. A read that throws is a miss; a write that
+    /// throws is a result nobody kept. Either way the caller gets its image, and the fault
+    /// rides on the result for the front door to log and count. Cancellation is the caller's
+    /// own and passes through untouched.
+    /// </summary>
+    private static async Task<(T? Value, string? Fault)> Guarded<T>(Func<Task<T?>> read) where T : class
+    {
+        try { return (await read(), null); }
+        catch (Exception e) when (e is not OperationCanceledException) { return (null, Describe(e)); }
+    }
+
+    /// <summary>Type and first line only: enough to triage, and never a stack.</summary>
+    private static string Describe(Exception e)
+    {
+        var line = e.Message.Split('\n', 2)[0].Trim();
+        return line.Length == 0 ? e.GetType().Name : $"{e.GetType().Name}: {line}";
     }
 
     private static PipelineResult Failed(string sourceId, string keySource, Recipe recipe, string error) =>

@@ -42,7 +42,7 @@ public static class RunCommand
             {
                 var options = PipelineOptions.FromEnvironment(Environment.GetEnvironmentVariable);
                 var rec = ResolveRecipe(pr.GetValue(recipe), options.Recipes);
-                var store = OpenOutput(pr.GetValue(output)!);
+                var store = new Counted(OpenOutput(pr.GetValue(output)!));
                 var items = ReadItems(pr.GetValue(input)!);
                 Engine.Init(1);
                 var workers = Math.Max(1, pr.GetValue(concurrency));
@@ -63,6 +63,14 @@ public static class RunCommand
                     if (manifestPath is null) await manifestWriter.FlushAsync(ct);
                     else await manifestWriter.DisposeAsync();
                 }
+                // One rejected put is that item's line. A store that kept nothing is the run's
+                // problem: every line says failed for the same reason, and 0 would call that
+                // a success.
+                if (store.Faults > 0 && store.Puts == 0)
+                {
+                    Console.Error.WriteLine($"plinth run: the store kept nothing — {store.Faults} store faults, 0 puts; see the failed lines");
+                    return 2;
+                }
                 return 0;
             }
             catch (Exception e) when (e is not OperationCanceledException)
@@ -72,6 +80,34 @@ public static class RunCommand
             }
         });
         return cmd;
+    }
+
+    /// <summary>
+    /// Counts what the store did, so the run can tell "this item's put failed" from "the
+    /// store kept nothing". Every call passes through unchanged; only the numbers are kept.
+    /// </summary>
+    private sealed class Counted(IOutputStore inner) : IOutputStore
+    {
+        private long _puts, _faults;
+        public long Puts => Interlocked.Read(ref _puts);
+        public long Faults => Interlocked.Read(ref _faults);
+
+        public Task<bool> ExistsAsync(string key, CancellationToken ct = default) => Watched(inner.ExistsAsync(key, ct));
+        public Task<StoredOutput?> TryGetAsync(string key, CancellationToken ct = default) => Watched(inner.TryGetAsync(key, ct));
+        public Task<ResultRecord?> TryGetRecordAsync(string key, CancellationToken ct = default) => Watched(inner.TryGetRecordAsync(key, ct));
+
+        public async Task PutAsync(string key, byte[] bytes, ResultRecord record, CancellationToken ct = default)
+        {
+            await Watched(Put());
+            Interlocked.Increment(ref _puts);
+            async Task<bool> Put() { await inner.PutAsync(key, bytes, record, ct); return true; }
+        }
+
+        private async Task<T> Watched<T>(Task<T> call)
+        {
+            try { return await call; }
+            catch (Exception e) when (e is not OperationCanceledException) { Interlocked.Increment(ref _faults); throw; }
+        }
     }
 
     /// <summary>

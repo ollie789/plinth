@@ -29,13 +29,13 @@ public class ApiTests : IAsyncLifetime
     private PipelineOptions Options(string? signingKey = null, string onFailure = "redirect", int maxInFlight = 4, bool normalize = true) =>
         new(FetchPolicy.FromHostList("cdn.example.com"), "none", RecipeCatalog.DefaultOnly, signingKey, onFailure, 1, maxInFlight, normalize);
 
-    private async Task StartAsync(PipelineOptions options)
+    private async Task StartAsync(PipelineOptions options, IOutputStore? store = null)
     {
         _app = ApiHost.Build([], options, b =>
         {
             b.WebHost.UseTestServer();
             b.Services.AddSingleton<ISourceFetcher>(_fetcher);
-            b.Services.AddSingleton<IOutputStore>(_store);
+            b.Services.AddSingleton(store ?? _store);
         });
         await _app.StartAsync();
         _client = _app.GetTestClient();
@@ -94,6 +94,33 @@ public class ApiTests : IAsyncLifetime
         // about which hosts are configured: every unsigned request looks the same from outside.
         var offList = await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString("https://evil.com/a.jpg")}");
         Assert.Equal(HttpStatusCode.Forbidden, offList.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_store_outage_degrades_to_misses_and_shows_on_healthz()
+    {
+        // There is no fallback below the API once a signed URL is emitted, so a store that
+        // cannot be reached must cost a re-render, not the image.
+        await DisposeAsync();
+        await StartAsync(Options(), new FaultyStore(failReads: true, failWrites: true));
+
+        var r = await _client.GetAsync($"/v1/image?src={Uri.EscapeDataString(Url)}");
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        Assert.Equal("image/webp", r.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("miss", r.Headers.GetValues("X-Plinth-Cache").Single());
+
+        using var health = JsonDocument.Parse(await _client.GetStringAsync("/healthz"));
+        Assert.Equal("ok", health.RootElement.GetProperty("status").GetString());
+        Assert.StartsWith("error: ", health.RootElement.GetProperty("store").GetString());
+        Assert.True(health.RootElement.GetProperty("storeFaults").GetInt64() >= 1);
+    }
+
+    [Fact]
+    public async Task Healthz_says_the_store_answers_when_it_does()
+    {
+        using var health = JsonDocument.Parse(await _client.GetStringAsync("/healthz"));
+        Assert.Equal("ok", health.RootElement.GetProperty("store").GetString());
+        Assert.Equal(0, health.RootElement.GetProperty("storeFaults").GetInt64());
     }
 
     [Fact]

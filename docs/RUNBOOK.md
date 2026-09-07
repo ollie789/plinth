@@ -133,9 +133,11 @@ tile client-side would leave the claim counting products nobody can see.
 ## Verifying a roll
 
 1. `curl /version` reports the engine you deployed.
-2. `curl /healthz` shows `failed: 0`. Counters are **per-replica** and the app
-   scales to 3, so consecutive reads can go down as well as up. Do not use them
-   to test a single request.
+2. `curl /healthz` shows `store: "ok"` and `failed: 0`. `store` is a live
+   probe of Blob; anything else there is the store, not the engine, and images
+   keep serving through it as misses (`storeFaults` counts them). Counters are
+   **per-replica** and the app scales to 3, so consecutive reads can go down as
+   well as up. Do not use them to test a single request.
 3. The consumer's pages emit `&v=<new engine>` on every tile URL.
 4. A tile that should be carded comes back at the canvas aspect. Fetching the
    page's own `/_next/image` URL and checking the pixel dimensions is the only

@@ -60,6 +60,27 @@ public class CliTests : IDisposable
     }
 
     [Fact]
+    public async Task A_store_that_keeps_nothing_fails_the_run_not_just_its_items()
+    {
+        // The test takes write permission away from the output directory, which needs Unix
+        // mode bits and a process that honours them: not Windows, and not root.
+        if (OperatingSystem.IsWindows() || Environment.IsPrivilegedProcess) return;
+        Directory.CreateDirectory(_out);
+        File.SetUnixFileMode(_out, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            var run = await Run(CliApp.Build(), "run", "--input", Path.Combine(_dir, "in"), "--output", _out, "--concurrency", "2");
+            Assert.Equal(2, run.Code);
+            Assert.Equal(4, run.Lines.Count);                 // every item still got its line
+            Assert.Equal(4, Count(run.Lines, "failed"));      // three unwritable, one junk
+        }
+        finally
+        {
+            File.SetUnixFileMode(_out, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
+    [Fact]
     public async Task Run_over_a_url_list_upgrades_thumbnail_urls_to_their_master()
     {
         const string master = "https://m.media-amazon.com/images/I/71abcDEF.jpg";
