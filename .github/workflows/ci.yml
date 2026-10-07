@@ -18,7 +18,7 @@ jobs:
       - run: dotnet test --no-build -c Release --logger "trx;LogFileName=results.trx"
       - name: Benchmark against the committed baseline (output-bytes gate; CPU and wall are informational off-machine)
         run: dotnet run -c Release --no-build --project src/Plinth.Bench -- --iterations 5
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: test-results
