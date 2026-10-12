@@ -499,19 +499,24 @@ one interface.
   publishes `ghcr.io/ollie789/plinth:<version>` and `:latest`. The image tag is
   the package version; `Engine.Version` is the algorithm version and is
   independent of it.
-- **LASTLOOK hosting**: Azure Container Apps, 0.5 vCPU / 1 GiB, ingress
-  public, `minReplicas: 1` in production so the first tile of the day does
-  not wait for a cold start (a scale-to-zero container plus libvips takes
-  several seconds to wake and Vercel's image optimiser gives up on slow
-  upstreams). Store is Azure Blob in the same region behind Azure CDN or a
-  custom domain such as `img.lastlook.com.au`.
+- **LASTLOOK hosting**: since 12 October 2026, a Vercel container function
+  in the company team, built from `Dockerfile.vercel` (declared in
+  `vercel.json`, region `syd1`), with no store: Vercel's CDN caches each tile
+  and the API processes every miss. Merging to `main` deploys it. It scales
+  to zero after five idle minutes; a cold start measured about 1.2 s, which
+  has been fine in testing. From 2 September to 12 October
+  it ran on Azure Container Apps (0.5 vCPU / 1 GiB, `minReplicas: 1`) with an
+  Azure Blob store, until that subscription was cancelled. `docs/RUNBOOK.md`
+  covers both.
 - **CF hosting**: their call. The image runs anywhere Docker does.
 
 ## 9. LASTLOOK integration (shipped 4 September 2026)
 
 The container, backed by the Blob store, replaced the Next.js route. What
 shipped differs from the plan in three places, each of which was learned the
-hard way; `docs/RUNBOOK.md` has the operator's version.
+hard way; `docs/RUNBOOK.md` has the operator's version. Points 2 and 3
+describe the Azure deployment: since the move to Vercel on 12 October 2026
+there is no store and no warming, and every miss is processed on request.
 
 1. The mapper's `engineImageUrl` emits the signed Plinth URL instead of
    `/img-engine`, still wrapped by `/_next/image` for per-width resizing and
@@ -531,9 +536,12 @@ hard way; `docs/RUNBOOK.md` has the operator's version.
    so a full warm never loads the container. Only primaries are warmed; the
    gallery's other images are mapped too but processed on first request.
 4. `lib/image-engine.ts` keeps `PLINTH_HOSTS` as the source of truth, mirrored
-   by the container's `PLINTH_ALLOWED_HOSTS`, and the warm tool imports it so
-   the two cannot drift. The `/img-engine` route remains as the fallback when
-   the Plinth variables are unset.
+   by `PLINTH_ALLOWED_HOSTS` in `Dockerfile.vercel`. Nothing enforces that
+   mirror, so change both (the runbook gives the order). The consumer only
+   signs Plinth URLs when Plinth's host is on its optimiser list
+   (`lib/image-hosts.ts`), so deleting that one line is the off switch. With
+   Plinth off, provider images go straight to the optimiser and the
+   `/img-engine` route serves the few retailer hosts.
 5. A source that answers nothing — 403, 404, 410 — is dropped at the mapper
    from a generated list (`lib/unfetchable-images.ts`). Plinth's failure
    redirect cannot help when the source is what is missing, and hiding the
@@ -674,9 +682,10 @@ design target, not an enforced one.
 - Canvas stays at 1000 px wide because the CDN resizes down per width; a
   larger master buys nothing on a tile.
 - Records are tiny JSON beside the image; no database in the hot path.
-- LASTLOOK Blob lifecycle rule: delete outputs not read for 120 days.
-  Products leave sales; their tiles should not be paid for forever. A
-  deleted key is simply reprocessed on the next request.
+- LASTLOOK Blob lifecycle rule (Azure only, retired with it on 12 October
+  2026): delete outputs not read for 120 days. Products leave sales; their
+  tiles should not be paid for forever. A deleted key is simply reprocessed
+  on the next request. On Vercel there is no store to expire.
 
 ### 12.5 Hosting cost, LASTLOOK
 
@@ -699,6 +708,15 @@ in about 40 ms. Two Azure Monitor alerts cover it — no running replica, and a
 restart count above three in fifteen minutes — because there is no runtime
 fallback once a signed URL is emitted: a Plinth outage is broken tiles across
 the whole site, not degraded ones.
+
+On Vercel (since 12 October 2026) the bill is Active CPU while a tile is being
+processed, plus memory while a request is in flight. The whole catalogue is
+about 1.8 core-hours of processing (README, In production), each tile is
+processed once per URL, and the CDN serves everything after that. There is no
+idle replica to pay for, and no alerting yet (runbook, Known open). On
+12 October the cancelled Azure host stopped answering and every tile hung
+until the optimiser gave up; no alert fired, because the alerts were
+cancelled with it.
 
 ### 12.6 Measurement
 
@@ -779,8 +797,9 @@ is a later addition.
   edge contact was never the signal — fill is. 85% was chosen by eye from 78,
   85 and 90 side by side; whether it holds across more brands is the thing to
   watch once the framed passthrough rate is visible in production.
-- The custom domain (`img.lastlook.com.au`) for the store. The subscription,
-  resource group, Container App, Blob store and alerting exist.
+- A custom domain (such as `img.lastlook.com.au`) in place of the
+  Vercel-assigned `plinth-rho.vercel.app`. The runbook lists the four places
+  it touches.
 - LASTLOOK's tiles are 3:4 while the canvas is 4:5, so every tile loses about
   6% of its width to the crop and a wide item at 92% of the canvas clears it
   by under a percent. Either the tile changes shape, which is a design call

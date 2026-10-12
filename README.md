@@ -24,7 +24,7 @@ from the full catalogue run of 4 September 2026, engine 1.5, not a sample.
 | Engine time | 113 ms per image mean, 89 ms median; 1.8 core-hours for the whole run |
 | Wall clock | 31 minutes at 48 workers on a 14-core laptop — network-bound on the source CDN, not CPU-bound |
 | Tile size | 47 KB mean, 36 KB median; 2.2 GB for all 44,800 |
-| Serving | one 0.5 vCPU / 1 GiB container, about 40 ms on a store miss, Blob reads otherwise |
+| Serving | a Vercel container function in Sydney since 12 Oct 2026, scaled to zero when idle; no store, so each tile is processed once and Vercel's CDN serves the repeats |
 
 Scaled linearly, a million images is roughly 30 core-hours of processing and
 36 GB of tiles. Run at ingest, where the bytes are already in hand, the
@@ -302,10 +302,12 @@ else the machine is doing — pass `--strict` to gate on those too.
 
 ## Operating it
 
-If you are deploying Plinth, rolling the engine, or warming a catalogue, read
-`docs/RUNBOOK.md` first. Two of the things in it — merge before you tag, and
-bump the consumer's engine constant in the same change — fail silently rather
-than loudly, and both have cost a debugging session already.
+Production runs on Vercel, and merging to `main` deploys it. Before you merge,
+roll the engine, or change the allowed hosts, read `docs/RUNBOOK.md`. Several
+of the things in it fail silently rather than loudly: the consumer's engine
+constant, a missing signing key, and the `vercel.json` that makes Vercel build
+the container at all. The first and last have each cost a debugging session
+already.
 
 ## Design
 
