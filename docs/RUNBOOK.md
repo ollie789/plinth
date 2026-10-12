@@ -4,184 +4,346 @@ Everything an operator needs that the code cannot tell you. The design spec
 (`docs/2026-09-02-plinth-design.md`) says what Plinth is and why; this says how
 to change it without breaking the site that depends on it.
 
+Since 12 October 2026 production runs on Vercel. The Azure deployment it
+replaced is retired; what is left of it is at the end of this file.
+
 ## Where it runs
 
 | | |
 |---|---|
-| Image | `ghcr.io/ollie789/plinth:<tag>`, published by `.github/workflows/release.yml` on a `v*` tag |
-| Host | Azure Container App `plinth` in resource group `rg-plinth`, environment `plinth-env` |
-| Store | Azure Blob container `tiles`; the account name is in `deploy/azure/.state/storage` |
-| Consumer | LASTLOOK (`ollie789/mahir`), `lib/image-engine.ts` |
+| Host | Vercel container function: team `lastlook`, project `plinth`, region `syd1` (set in `vercel.json`) |
+| Public URL | `https://plinth-rho.vercel.app`, the production domain and the only public address |
+| Build | `Dockerfile.vercel`, which `vercel.json` declares as the project's one container service; images land in Vercel Container Registry (`vercel vcr image ls plinth`) |
+| Deploys | Merging to `main` deploys production in about a minute (the container build is about 35 s). Any other branch gets a preview deployment |
+| Settings | Non-secret ones are `ENV` lines in `Dockerfile.vercel`; `PLINTH_SIGNING_KEY` is a Sensitive variable on the Vercel project (Production and Preview) |
+| Store | None (`PLINTH_STORE=none`). Vercel's CDN caches each tile; the consumer's image optimiser caches each resized copy |
+| Consumer | LASTLOOK (`ollie789/mahir`): `lib/image-engine.ts` and `lib/image-hosts.ts`, plus the `PLINTH_BASE_URL` and `PLINTH_SIGNING_KEY` variables |
+| Published image | `ghcr.io/ollie789/plinth:<tag>`, built from `Dockerfile` by `.github/workflows/release.yml` on a `v*` tag. It is for anyone hosting Plinth elsewhere; LASTLOOK production does not use it |
 
-A tile's identity is `sha256(sourceId | recipeHash | engineVersion)`. Blobs are
-sharded one level: `<key[:2]>/<key>.json` for the record and `<key[:2]>/<key>.<ext>`
-for the image. **The engine version is part of the key**, so rolling the engine
-invalidates the entire store by design.
+Every address except the production domain sits behind Vercel Authentication:
+`plinth-lastlook.vercel.app`, the per-deployment URLs, and all previews. Reach
+those with `vercel curl <url> --scope lastlook`; a plain `curl` gets a 302 to a
+login page.
 
-Requests are signed `HMAC-SHA256` over the exact `src` string, key as UTF-8,
-lowercase hex. The signature covers **the src alone** — other query parameters
-ride outside it, which is what makes the cache-busting parameter below possible.
+A tile's identity is `sha256(sourceId | recipeHash | engineVersion)`. Requests
+are signed `HMAC-SHA256` over the exact `src` string, key as UTF-8, lowercase
+hex. The signature covers **the src alone**. Other query parameters ride
+outside it, which is what makes the cache-busting parameter below possible.
 
-## The two rules that will bite you
+## How a tile reaches a shopper
 
-Both of these cost real time on 4 Sep 2026. Neither announces itself: the
-symptom in both cases is code that looks deployed and isn't.
+1. The consumer's feed mapper turns each product image into a signed URL,
+   `https://plinth-rho.vercel.app/v1/image?src=…&sig=…&v=<PLINTH_ENGINE>`.
+2. That URL is baked into the consumer's stored page copies. Its warm job
+   rebuilds them stalest first, and every copy turns over in about ten
+   minutes.
+3. The shopper's browser asks the consumer's `/_next/image` for a width. The
+   optimiser fetches the Plinth URL, with Vercel's CDN in front of Plinth.
+4. On a CDN miss, Plinth fetches the source, normalises it, and returns a
+   webp marked `public, max-age=31536000, immutable`.
 
-### 1. Merge before you tag
+The consequence to remember: **any change to the URL takes about ten minutes
+to reach every page.** That covers a new engine, a new host, a new key and the
+off switch. Until a page's copy is rebuilt it keeps the old URL.
 
-`release.yml` builds from whatever the tag points at. Tagging a branch you have
-not merged yet cuts the release from the *old* commit and publishes it under the
-new version number. Nothing fails. You get an image that is correctly named and
-contains none of your work.
+## The rules that will bite you
 
-The only reason this was caught is that the deploy ran before the build had
-finished publishing, so it errored with `MANIFEST_UNKNOWN` instead of quietly
-succeeding.
+Most of these have already cost real time, and none of them announces itself.
 
-### 2. Bump `PLINTH_ENGINE` in the same change
+### 1. Merging to `main` is a production deploy
 
-Plinth serves every tile `public, max-age=31536000, immutable`. The signed URL
-is therefore the cache key for every layer between Plinth and the shopper: the
-image optimiser, the CDN, the browser.
+There is no tag step and no deploy command any more. A merge goes live in
+about a minute, so check CI before merging, not after. A build that fails on
+Vercel never replaces the running deployment, so a broken `Dockerfile.vercel`
+costs a failed deploy, not an outage. A change that builds but behaves badly
+goes live, and the fix is a rollback (see below).
 
-A new engine returns **different bytes for the same src** — that is what an
-engine roll *is*. If the URL does not change with it, nothing downstream has any
-reason to ask again, and a year's `max-age` means effectively never.
+### 2. Bump `PLINTH_ENGINE` in the consumer when the bytes change
+
+Plinth serves every tile `immutable` for a year, so the signed URL is the cache
+key for every layer between Plinth and the shopper: Vercel's CDN, the image
+optimiser and the browser. A new engine returns **different bytes for the same
+src**. That is what an engine roll *is*. If the URL does not change with it,
+nothing downstream has any reason to ask again.
 
 So `lib/image-engine.ts` in the consumer carries `PLINTH_ENGINE` and appends
 `&v=<version>` to every URL. Plinth ignores the parameter. It exists purely so
-the URL moves when the tiles do. **Bump it in the same change that rolls the
-Container App**, or production keeps serving the old tiles and looks perfectly
+the URL moves when the tiles do. Ship the consumer change **after** the Plinth
+deploy is live, or production keeps serving the old tiles and looks perfectly
 healthy while doing it.
+
+### 3. A missing signing key opens Plinth to anyone
+
+Plinth only checks signatures when `PLINTH_SIGNING_KEY` is set. Without it,
+every request is accepted, and a public URL becomes a free image normaliser on
+our bill. The key must be set for **both** Production and Preview on the
+Vercel project. After any change to the project's variables, confirm an
+unsigned request still gets a 403 (see Verifying).
+
+### 4. `vercel.json` is load-bearing
+
+Without its `services` entry, Vercel's build skips `Dockerfile.vercel`
+entirely, deploys nothing, and every route answers 404. That happened on the
+first deploy (12 Oct 2026, build CLI 62.7). Without `regions: ["syd1"]` the
+function runs in Washington (`iad1`), and every uncached tile crosses the
+Pacific to fetch an Australian source.
+
+### 5. Two Dockerfiles, two host lists
+
+`Dockerfile` builds the published ghcr image; `Dockerfile.vercel` builds
+production. Their build stages are copies, so change both. The allowed hosts
+live in `Dockerfile.vercel` (`PLINTH_ALLOWED_HOSTS`) and must match the
+consumer's `PLINTH_HOSTS` in `lib/image-engine.ts`. See Changing the allowed
+hosts for the order.
+
+### 6. After a rollback, merges stop going live
+
+An Instant Rollback turns off Vercel's automatic promotion. Later merges to
+`main` still build, but they do not replace the rolled-back deployment until
+you promote one (see Rolling back).
+
+## Deploying a change
+
+1. Open a PR. CI (`ci.yml`) builds and runs the tests; wait for it to pass.
+2. Optionally push the branch first. Its preview deployment runs the real
+   container, so you can check it with
+   `vercel curl https://<preview-url>/healthz --scope lastlook`.
+3. Merge. Vercel builds and promotes it in about a minute. Watch it with
+   `vercel ls --scope lastlook` from a checkout linked once with
+   `vercel link --project plinth --scope lastlook`, or on the project's
+   Deployments page.
+4. Run the checks under Verifying.
 
 ## Rolling a new engine
 
-```bash
-# 1. Merge first. Always.
-gh pr merge <n> --merge --delete-branch --repo ollie789/plinth
+1. Merge the PR that bumps `Engine.Version`. It is live about a minute later.
+2. Confirm `curl -s https://plinth-rho.vercel.app/version` reports the new
+   engine.
+3. Bump `PLINTH_ENGINE` in the consumer's `lib/image-engine.ts` and push.
+4. Pages pick up the new `&v=` as the consumer's warm job rebuilds them,
+   which takes about ten minutes. Then check a page's tiles (Verifying, step 5).
 
-# 2. Tag the merged main.
-git checkout main && git pull && git tag v0.7.0 && git push origin v0.7.0
+There is no warming step, because there is no store. The first request for a
+tile costs a source fetch, about 90–110 ms of processing (the 4 Sep catalogue
+run measured 89 ms median, 113 ms mean), and sometimes a cold start (below).
+Every repeat comes from the CDN.
 
-# 3. WAIT for the release build (~5 min). Confirm the image exists before deploying:
-gh run watch --repo ollie789/plinth
+## Rolling back
 
-# 4. Deploy.
-az containerapp update -n plinth -g rg-plinth --image ghcr.io/ollie789/plinth:0.7.0
+**Plinth itself.** Use Instant Rollback, either from the project's Production
+tile in the dashboard or with
+`vercel rollback <deployment-url> --scope lastlook`. It takes effect at once.
+Rollback restores the old build *with its old variables*, so changing a
+variable afterwards does nothing to it. Merges stop going live until you
+promote a deployment: `vercel promote <deployment-url> --scope lastlook`, or
+**Undo Rollback** on the Production tile.
 
-# 5. Confirm what is actually running.
-curl -s https://<fqdn>/version
-```
+**The consumer's off switch.** Use this when Plinth is down, slow or wrong and
+a rollback will not fix it. Delete the `plinth-rho.vercel.app` line from
+`IMAGE_HOSTS` in the consumer's `lib/image-hosts.ts` and push. The consumer
+only signs Plinth URLs when Plinth's host is on that list. Without it,
+provider images go straight to the image optimiser with the seller's own
+framing, and the handful of retailer hosts fall back to the consumer's older
+built-in `/img-engine` route. Putting the line back turns Plinth on again.
 
-**Never run `deploy/azure/provision.sh` to deploy.** It generates a new signing
-key when `PLINTH_SIGNING_KEY` is unset, which would invalidate every URL the
-consumer is serving. It is for provisioning, not rollout.
+The switch takes about ten minutes to reach every page (see How a tile
+reaches a shopper). Until a page is rebuilt, its tiles still name Plinth, and
+the consumer hands those URLs to the browser directly. If Plinth is hanging,
+those pages stay slow until they turn over. That is what happened on
+12 Oct 2026: the Azure host stopped answering, every tile hung for about 37 s,
+and each edit page's load event fired about 38 s in, long after most
+shoppers had acted.
 
-Then bump `PLINTH_ENGINE` in the consumer and ship that, or see rule 2.
+## Changing the allowed hosts
 
-## Warming the catalogue
+Plinth answers an unlisted host with `400 source not allowed`, which renders
+as an empty tile. So:
 
-After an engine roll the store is cold. Traffic warms it on its own at roughly
-40 ms a miss, but a full warm gets ahead of it.
+- **Adding a host:** add it to `PLINTH_ALLOWED_HOSTS` in `Dockerfile.vercel`
+  and merge first; then add it to the consumer's `PLINTH_HOSTS`.
+- **Removing a host:** remove it from the consumer first, wait about ten
+  minutes for pages to turn over, then remove it from Plinth.
 
-Enumerate the catalogue from the provider feed (`FEED_BASE_URL` / `FEED_TOKEN`,
-bearer auth): `/v1/collections?status=all`, then
-`/v1/collections/<slug>/products?page=N&per_page=250`, taking `images[0].src`
-for every product. Only the primary image is mapped through Plinth.
-
-```bash
-export PLINTH_AZURE_STORAGE_CONNECTION="$(az storage account show-connection-string \
-  -n "$(cat deploy/azure/.state/storage)" -g rg-plinth -o tsv)"
-export PLINTH_ALLOWED_HOSTS="<same list as the Container App>"
-dotnet run -c Release --project src/Plinth.Cli -- \
-  run -i catalogue.txt -o azblob://tiles --concurrency 48 --manifest warm.jsonl
-```
-
-This processes locally and writes to the same store the API reads, so it does
-not load the Container App at all. Reference point: 58,416 images in 31 minutes
-at 45 img/s on a 14-core laptop.
-
-A plain re-run **skips anything already keyed without fetching it**, so it is
-cheap but only picks up new products. To notice a source that has broken since
-it was warmed you need `--refresh`, which re-fetches everything and reprocesses
-only what actually changed.
+Hosts are exact names, `https` only, and an empty list refuses everything.
 
 ## When an image fails
 
-`PLINTH_ON_FAILURE=redirect` (the default) sends a 302 to the original source.
-That splits failures into two groups that deserve opposite handling.
+`PLINTH_ON_FAILURE=redirect` sends a 302 to the original source. That splits
+failures into two groups that deserve opposite handling.
 
-**Oversized** — over `PLINTH_MAX_BYTES` (20 MB). The redirect is followed and the
-original is served, so the product appears, just without the canvas. Leave these
-alone. Verified: a 16.7 MB JPEG reached the page as a 54 KB webp.
+**Oversized:** over `PLINTH_MAX_BYTES` (20 MB) or `PLINTH_MAX_PIXELS` (20 MP).
+The redirect is followed and the original is served, so the product appears,
+just without the canvas. Leave these alone. Verified: a 16.7 MB JPEG reached
+the page as a 54 KB webp.
 
-**Dead at source** — 403, 404, 410. The redirect points at nothing, the
+**Dead at source:** 403, 404 or 410. The redirect points at nothing, the
 optimiser returns 502, and the tile renders as an empty box with a price under
-it. These are not Plinth's failures and no fallback can help; a browser with a
-normal user-agent and referer gets the same 403.
+it. These are not Plinth's failures and no fallback can help. A browser with a
+normal user agent and referer gets the same 403.
 
-The consumer drops them at `feedToInternal`, from the list in
-`lib/unfetchable-images.ts`, regenerated by `tools/unfetchable-images.mjs` from a
-run manifest. Refresh it after each full warm. It must contain whole source
-URLs — a bare host there would empty an entire sale floor, and there is a test
-that says so.
+The consumer drops them at `feedToInternal`, using the list in
+`lib/unfetchable-images.ts`. That list is regenerated by
+`tools/unfetchable-images.mjs` from a catalogue run's manifest. To make one,
+list the catalogue with the consumer's `tools/catalogue-images.ts` (it walks
+the provider feed once, and the provider is sensitive to request volume, so
+run it rarely and never in a loop). Then process the list locally without a
+store:
 
-Dropping happens in the mapper rather than the browser because the page's claims
-("N products we found from $X") are derived from what is on the floor. Hiding a
-tile client-side would leave the claim counting products nobody can see.
+```bash
+PLINTH_ALLOWED_HOSTS="<the list in Dockerfile.vercel>" \
+  dotnet run -c Release --project src/Plinth.Cli -- \
+  run -i catalogue.txt -o none --concurrency 48 --manifest run.jsonl
+```
 
-## Verifying a roll
+The list must contain whole source URLs. A bare host there would empty an
+entire sale floor, and a test in the consumer says so. Dropping happens in the
+mapper rather than the browser because each page's claims ("N products we
+found from $X") are derived from what is on the floor. Hiding a tile
+client-side would leave the claim counting products nobody can see.
 
-1. `curl /version` reports the engine you deployed.
-2. `curl /healthz` shows `store: "ok"` and `failed: 0`. `store` is a live
-   probe of Blob; anything else there is the store, not the engine, and images
-   keep serving through it as misses (`storeFaults` counts them). Counters are
-   **per-replica** and the app scales to 3, so consecutive reads can go down as
-   well as up. Do not use them to test a single request.
-3. The consumer's pages emit `&v=<new engine>` on every tile URL.
-4. A tile that should be carded comes back at the canvas aspect. Fetching the
+## Verifying
+
+1. **Health and region:** `curl -sD - https://plinth-rho.vercel.app/healthz`
+   should return 200 and `"status":"ok"`, with a header like
+   `x-vercel-id: syd1::syd1::…`. The second segment is the function's region;
+   `iad1` there means `regions` was lost. With no store, `store` is always
+   `"ok"`. The counters are per instance, and instances come and go, so never
+   read them as totals.
+2. **Engine:** `curl -s https://plinth-rho.vercel.app/version` reports the
+   engine and libvips versions.
+3. **Signing is on:** an unsigned request must be refused.
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}\n" \
+     "https://plinth-rho.vercel.app/v1/image?src=https%3A%2F%2Fimg.clickfrenzy.com.au%2Fx.jpg"
+   ```
+   It must print `403`. Anything else, usually a `302` to the missing source,
+   means the signature check is off because `PLINTH_SIGNING_KEY` is missing
+   (rule 3).
+4. **A real tile:** take a signed URL from a live page, so the key never
+   leaves the consumer.
+   ```bash
+   TILE=$(curl -s https://live.lastlook.com.au/edits/books-edit \
+     | grep -oE 'https%3A%2F%2Fplinth-rho\.vercel\.app[^&"]+' | head -1 \
+     | python3 -c 'import sys,urllib.parse;print(urllib.parse.unquote(sys.stdin.read().strip()))')
+   curl -s -o /dev/null -w "%{http_code} %{content_type} %{size_download}B\n" "$TILE"
+   ```
+   It should print `200 image/webp`. An empty `TILE` means the page carries
+   no Plinth URLs (the off switch is in, or the copies have not turned over
+   yet).
+5. **The whole chain:** the page's tile URLs carry the expected `&v=`, and a
+   tile that should be carded comes back at the canvas aspect. Fetching the
    page's own `/_next/image` URL and checking the pixel dimensions is the only
-   check that covers the whole chain; everything upstream can look right while
+   check that covers the whole chain. Everything upstream can look right while
    the shopper still gets a stale image.
 
-## Sizing the box
+## Limits on Vercel
 
-The render decodes at output scale, not source scale, and the measurer works
-on a 512 px copy, so a normal image costs far less than its pixel count. The
-worst case is a whole-frame decoder — webp — on a frame at the cap, with
-`PLINTH_MAX_INFLIGHT` of them in flight at once:
+- **Memory:** each instance is Vercel's Standard size, 2 GB and 1 vCPU (Pro
+  teams can change it under Settings → Functions). Peak use is roughly
+  `MaxInFlight × (MaxPixels × 4 bytes + MaxBytes) + ~150 MB runtime`. At
+  production's `PLINTH_MAX_INFLIGHT=4` and `PLINTH_MAX_PIXELS=20000000` that
+  is about 550 MB. Every image the catalogue has shipped is under 18.4 MP.
+  Anything over the cap is refused at the header and, under redirect, served
+  uncarded from the source.
+- **In-flight work:** each instance processes at most four images at a time
+  (`PLINTH_MAX_INFLIGHT`); any more queue on its gate.
+- **Cold starts:** an instance shuts down after five minutes without traffic.
+  The first request after that waits for a start, about 1.2 s measured in
+  `syd1`. Azure ran a permanently warm replica because the image optimiser
+  gives up on slow upstreams. One to two seconds has been fine in testing,
+  but nothing keeps an instance warm overnight (see Known open).
+- **Duration:** 300 s per request, Vercel's default, far beyond any tile.
+- **Logs:** the dashboard's Logs tab for the project, or
+  `vercel logs --project plinth --scope lastlook`. A container's stdout goes
+  to every request in flight on that instance, so match lines by the request
+  log's `Key` rather than by timing.
+- **Registry:** each deploy stores an image of about 104 MB in Vercel
+  Container Registry, at $0.10 per GB-month. Prune old ones now and then with
+  `vercel vcr image ls plinth --scope lastlook` and
+  `vercel vcr image rm plinth <image-id> --scope lastlook`.
 
-    peak ≈ MaxInFlight × (MaxPixels × 4 bytes + MaxBytes) + ~150 MB runtime
+## Running it locally
 
-At the defaults (4 × (30 MP × 4 + 20 MB)) that is about 700 MB, which fits a
-1 GiB container on paper and not by much. Production runs
-`PLINTH_MAX_PIXELS=20000000`: every image the catalogue has shipped is under
-18.4 MP, and 20 MP brings the worst case to about 550 MB. Anything over the cap
-is refused at the header and, under `PLINTH_ON_FAILURE=redirect`, served
-uncarded from the source — a fallback, not a broken tile.
+- Tests: `dotnet test`.
+- The API from source:
+  `ASPNETCORE_HTTP_PORTS=8080 PLINTH_ALLOWED_HOSTS=img.clickfrenzy.com.au dotnet run --project src/Plinth.Cli -- api`.
+  No `PLINTH_SIGNING_KEY` means signing is off, which is fine locally and
+  never anywhere public.
+- The production container:
+  `docker build -f Dockerfile.vercel -t plinth:vercel . && docker run --rm -p 8080:80 -e PLINTH_SIGNING_KEY=dev plinth:vercel`.
+  `vercel dev` runs the same image through Vercel's local runtime, and needs
+  Docker running.
 
 ## Secrets
 
-The signing key lives in `deploy/azure/.state/signing-key`, git-ignored, and is
-mirrored into the consumer's `PLINTH_SIGNING_KEY` (Production, Sensitive).
-Never print it, never commit it, never pass it on a command line that lands in
-shell history. Rotating it invalidates every URL in flight.
+`PLINTH_SIGNING_KEY` is set in three places, and all three must match:
 
-## Known open, as of 4 Sep 2026
+- the `plinth` project's Production variables;
+- the `plinth` project's Preview variables;
+- the consumer's Production `PLINTH_SIGNING_KEY`.
 
-- ~~MaxBytes is 12 MB.~~ Raised to 20 MB and made settable as
-  `PLINTH_MAX_BYTES`, so a provider shipping bigger thumbnails no longer needs
-  a release. It bounds memory as much as bandwidth — `PLINTH_MAX_INFLIGHT`
-  sources of this size can be in flight at once — so raise it deliberately.
+All three are Sensitive, so Vercel never shows the value again. Keep the one
+readable copy in the team password manager. Never print the key, commit it,
+or put it on a command line that lands in shell history. Pipe it from a file
+instead:
+`tr -d '\n' < key | vercel env add PLINTH_SIGNING_KEY production --sensitive --scope lastlook`.
+
+**Rotating it.** Plinth holds one key at a time, and the consumer's stored
+pages carry signatures made with the old one. Swapping the key in place would
+break every tile until the pages turn over. To rotate without broken tiles:
+
+1. Turn the consumer's off switch (Rolling back) and wait about ten minutes,
+   until a live page carries no Plinth URLs (Verifying, step 4 returns an
+   empty `TILE`).
+2. Generate a key (`openssl rand -hex 32`) and set it in all three places
+   above, replacing the old value.
+3. Redeploy both. A new variable value only reaches a new deployment:
+   `vercel redeploy <plinth-production-url> --target production --scope lastlook`,
+   and a push or redeploy for the consumer.
+4. Put the host line back in the consumer and push. Every tile is processed
+   once more, because the signature is part of its URL.
+
+## Azure (retired 12 Oct 2026)
+
+From 2 Sep to 12 Oct 2026 Plinth ran as Azure Container App `plinth` in
+resource group `rg-plinth` (Australia East), with tiles warmed into Blob
+container `tiles` on storage account `plinth4bd6bf1c`. The subscription was
+cancelled on 12 Oct, and the storage account now answers `AccountIsDisabled`.
+
+Still to delete, by the subscription owner:
+
+- resource group `rg-plinth`, which holds the Container App, its environment
+  `plinth-env` and the storage account;
+- alerts `plinth-not-running` and `plinth-restarting`, and action group
+  `plinth-alerts`, which emails a personal address.
+
+Azure typically deletes a cancelled subscription's data on its own about 90
+days after cancellation. The provisioning script `deploy/azure/provision.sh` was removed
+when Plinth moved; recover it with `git show dcc095f:deploy/azure/provision.sh`.
+The `azblob://` store is still supported for anyone hosting Plinth on Azure.
+
+## Known open, as of 12 Oct 2026
+
+- **No alerting.** The Azure alerts went with the subscription, and nothing
+  replaces them yet. The suggested fix is for the consumer's warm job, which
+  runs every two minutes, to probe `/healthz` and log `[plinth] down` on a
+  failure. As a side effect it would keep one instance warm.
+- **No custom domain.** `plinth-rho.vercel.app` is Vercel-assigned. Moving to
+  something like `img.lastlook.com.au` needs a DNS record, the domain added
+  to the project, the host added to the consumer's `IMAGE_HOSTS`, and
+  `PLINTH_BASE_URL` changed. Every tile is processed once more, because the
+  host is part of the URL.
+- **The signing key spent a month on a personal account.** It also still sits
+  in plain text at `deploy/azure/.state/signing-key` on the original
+  operator's machine. Move it to the password manager, delete the file, and
+  consider a rotation.
 - **The consumer's tiles are 3:4, the canvas is 4:5.** Every tile loses about
   6% of its width to the crop. Wide items sit at 92% of the canvas, so they
   clear it by under a percent.
-- **The quick-view gallery bypasses the engine.** Only `images[0]` is mapped;
-  the gallery's other images are served raw, so it visibly flips from a
-  normalised card to the seller's own framing.
-- **The unfetchable list is a snapshot.** A source that dies between warms shows
-  an empty tile until the next one. Making it self-healing needs somewhere to
-  persist live verification.
+- **The unfetchable list is a snapshot.** A source that dies between catalogue
+  runs shows an empty tile until the next one. Making it self-healing needs
+  somewhere to persist live verification.
 - **Dependabot** major bumps to `release.yml` are not covered by CI, which only
-  runs `ci.yml`. Prove them with a prerelease tag — `:latest` only moves for
-  non-prereleases — before trusting the next real release.
+  runs `ci.yml`. Prove them with a prerelease tag (`:latest` only moves for
+  non-prereleases) before trusting the next published image. They do not
+  affect production, which builds from `Dockerfile.vercel`.
