@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+# Plinth on Vercel (container function). vercel.json declares it as the
+# project's one container service and routes all traffic to it — without that
+# file the build skipped this Dockerfile entirely (12 Oct 2026, CLI 62.7).
+# Same build as ./Dockerfile; the runtime differs only where Vercel needs it:
+#   - HTTP on port 80 (Vercel's default target), so the process runs as root —
+#     a non-root user cannot bind below 1024, and each instance is its own microVM;
+#   - API mode by default, no HEALTHCHECK (Vercel does not use one);
+#   - no tile store: instances are stateless and scale to zero, and the
+#     consumer's image optimiser (Mahir's /_next/image) caches every result.
+# Secrets come from the Vercel project's environment, never this file (the
+# repo is public): PLINTH_SIGNING_KEY is required there.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY Directory.Build.props Directory.Packages.props Plinth.sln ./
+COPY src/Plinth.Core/Plinth.Core.csproj src/Plinth.Core/
+COPY src/Plinth.Pipeline/Plinth.Pipeline.csproj src/Plinth.Pipeline/
+COPY src/Plinth.Api/Plinth.Api.csproj src/Plinth.Api/
+COPY src/Plinth.Cli/Plinth.Cli.csproj src/Plinth.Cli/
+RUN dotnet restore src/Plinth.Cli/Plinth.Cli.csproj
+COPY src/ src/
+RUN dotnet publish src/Plinth.Cli/Plinth.Cli.csproj -c Release -o /app --no-restore
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+COPY --from=build /app .
+# The settings the Azure app ran with on 7 Sep (revision plinth--0000013),
+# minus the Blob store. PLINTH_ALLOWED_HOSTS mirrors Mahir's PLINTH_HOSTS
+# (lib/image-engine.ts); change both together.
+ENV ASPNETCORE_HTTP_PORTS=80 \
+    PLINTH_STORE=none \
+    PLINTH_ON_FAILURE=redirect \
+    PLINTH_MAX_INFLIGHT=4 \
+    PLINTH_MAX_BYTES=20971520 \
+    PLINTH_MAX_PIXELS=20000000 \
+    PLINTH_ALLOWED_HOSTS=img.clickfrenzy.com.au,cdn.shopify.com,forevernew.bynder.com,www.forevernew.com.au,assets.adidas.com,contents.mediadecathlon.com,feeds.frgimages.com,i8.amplience.net,images.asos-media.com,images.puma.com,img.zcdn.com.au,img1.theiconic.com.au,m.media-amazon.com,media.bunnings.com.au,myer-media.com.au,www.adairs.com.au,www.citybeach.com,www.davidjones.com,www.platypusshoes.com.au
+EXPOSE 80
+ENTRYPOINT ["dotnet", "plinth.dll"]
+CMD ["api"]

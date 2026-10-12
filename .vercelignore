@@ -1,0 +1,15 @@
+# Only what Dockerfile.vercel builds goes up. deploy/ holds the Azure state
+# directory (the signing key) and must never be uploaded.
+deploy/
+tests/
+docs/
+tools/
+**/bin/
+**/obj/
+*.user
+.vs/
+.idea/
+.github/
+.git/
+.env*
+.vercel/

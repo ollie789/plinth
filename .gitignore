@@ -6,3 +6,5 @@ obj/
 .DS_Store
 TestResults/
 docs/bench/latest.json
+.vercel
+.env*
