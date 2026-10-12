@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
-# Plinth on Vercel (container function). Vercel builds this file automatically
-# and routes all traffic to it; see docs/RUNBOOK.md, "Hosting on Vercel".
+# Plinth on Vercel (container function). vercel.json declares it as the
+# project's one container service and routes all traffic to it — without that
+# file the build skipped this Dockerfile entirely (12 Oct 2026, CLI 62.7).
 # Same build as ./Dockerfile; the runtime differs only where Vercel needs it:
 #   - HTTP on port 80 (Vercel's default target), so the process runs as root —
 #     a non-root user cannot bind below 1024, and each instance is its own microVM;
