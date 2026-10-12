@@ -502,7 +502,9 @@ one interface.
 - **LASTLOOK hosting**: since 12 October 2026, a Vercel container function
   in the company team, built from `Dockerfile.vercel` (declared in
   `vercel.json`, region `syd1`), with no store: Vercel's CDN caches each tile
-  and the API processes every miss. Merging to `main` deploys it. It scales
+  and the API processes every miss, at `https://plinth-rho.vercel.app` (its
+  own address: Plinth stays off LASTLOOK's domain). Merging to `main` deploys
+  it. It scales
   to zero after five idle minutes; a cold start measured about 1.2 s, which
   has been fine in testing. From 2 September to 12 October
   it ran on Azure Container Apps (0.5 vCPU / 1 GiB, `minReplicas: 1`) with an
@@ -713,10 +715,10 @@ On Vercel (since 12 October 2026) the bill is Active CPU while a tile is being
 processed, plus memory while a request is in flight. The whole catalogue is
 about 1.8 core-hours of processing (README, In production), each tile is
 processed once per URL, and the CDN serves everything after that. There is no
-idle replica to pay for, and no alerting yet (runbook, Known open). On
-12 October the cancelled Azure host stopped answering and every tile hung
-until the optimiser gave up; no alert fired, because the alerts were
-cancelled with it.
+idle replica to pay for. On 12 October the cancelled Azure host stopped
+answering and every tile hung until the optimiser gave up; no alert fired,
+because the alerts were cancelled with it. Since then the consumer's warm job
+checks Plinth every two minutes and emails on failure (runbook, Monitoring).
 
 ### 12.6 Measurement
 
@@ -797,9 +799,6 @@ is a later addition.
   edge contact was never the signal — fill is. 85% was chosen by eye from 78,
   85 and 90 side by side; whether it holds across more brands is the thing to
   watch once the framed passthrough rate is visible in production.
-- A custom domain (such as `img.lastlook.com.au`) in place of the
-  Vercel-assigned `plinth-rho.vercel.app`. The runbook lists the four places
-  it touches.
 - LASTLOOK's tiles are 3:4 while the canvas is 4:5, so every tile loses about
   6% of its width to the crop and a wide item at 92% of the canvas clears it
   by under a percent. Either the tile changes shape, which is a design call

@@ -12,7 +12,7 @@ replaced is retired; what is left of it is at the end of this file.
 | | |
 |---|---|
 | Host | Vercel container function: team `lastlook`, project `plinth`, region `syd1` (set in `vercel.json`) |
-| Public URL | `https://plinth-rho.vercel.app`, the production domain and the only public address |
+| Public URL | `https://plinth-rho.vercel.app`, the production domain and the only public address. Plinth is the owner's own technology and deliberately stays off LASTLOOK's domain |
 | Build | `Dockerfile.vercel`, which `vercel.json` declares as the project's one container service; images land in Vercel Container Registry (`vercel vcr image ls plinth`) |
 | Deploys | Merging to `main` deploys production in about a minute (the container build is about 35 s). Any other branch gets a preview deployment |
 | Settings | Non-secret ones are `ENV` lines in `Dockerfile.vercel`; `PLINTH_SIGNING_KEY` is a Sensitive variable on the Vercel project (Production and Preview) |
@@ -236,6 +236,20 @@ client-side would leave the claim counting products nobody can see.
    check that covers the whole chain. Everything upstream can look right while
    the shopper still gets a stale image.
 
+## Monitoring
+
+The consumer's warm job (`app/api/admin/warm-pages`, every two minutes) asks
+`/healthz` on the Plinth it is serving (`lib/plinth-health.ts`). Two failures
+in a row send an email to `OPS_ALERT_EMAIL`, a Production variable on the
+consumer, sent through its Resend domain. While Plinth stays down the email
+repeats at most every six hours, and one more goes out when it recovers. The
+watch state lives in the consumer's Runtime Cache, so it carries across runs.
+Every failure also logs `[plinth] down: …` in the consumer's logs, and the
+cron's JSON reports `plinth: { ok, status, ms, fails, sent }`.
+
+With the off switch in, the consumer serves no Plinth, so it checks nothing
+and cannot alert. Turning the switch back on resumes the checks.
+
 ## Limits on Vercel
 
 - **Memory:** each instance is Vercel's Standard size, 2 GB and 1 vCPU (Pro
@@ -251,7 +265,8 @@ client-side would leave the claim counting products nobody can see.
   The first request after that waits for a start, about 1.2 s measured in
   `syd1`. Azure ran a permanently warm replica because the image optimiser
   gives up on slow upstreams. One to two seconds has been fine in testing,
-  but nothing keeps an instance warm overnight (see Known open).
+  and the consumer's watchdog asks every two minutes, which keeps an instance
+  warm (see Monitoring).
 - **Duration:** 300 s per request, Vercel's default, far beyond any tile.
 - **Logs:** the dashboard's Logs tab for the project, or
   `vercel logs --project plinth --scope lastlook`. A container's stdout goes
@@ -282,13 +297,16 @@ client-side would leave the claim counting products nobody can see.
 - the `plinth` project's Preview variables;
 - the consumer's Production `PLINTH_SIGNING_KEY`.
 
-All three are Sensitive, so Vercel never shows the value again. Keep the one
-readable copy in the team password manager. Never print the key, commit it,
+All three are Sensitive, so Vercel never shows the value again. The one
+readable copy belongs in the team password manager; the key rotated on
+12 Oct 2026 was generated into `~/.config/lastlook/plinth-signing-key`
+(mode 600) on the operator's machine for that purpose. Never print the key, commit it,
 or put it on a command line that lands in shell history. Pipe it from a file
 instead:
 `tr -d '\n' < key | vercel env add PLINTH_SIGNING_KEY production --sensitive --scope lastlook`.
 
-**Rotating it.** Plinth holds one key at a time, and the consumer's stored
+**Rotating it.** Last rotated on 12 Oct 2026, after the key had spent a month
+on a personal Azure account. Plinth holds one key at a time, and the consumer's stored
 pages carry signatures made with the old one. Swapping the key in place would
 break every tile until the pages turn over. To rotate without broken tiles:
 
@@ -324,19 +342,6 @@ The `azblob://` store is still supported for anyone hosting Plinth on Azure.
 
 ## Known open, as of 12 Oct 2026
 
-- **No alerting.** The Azure alerts went with the subscription, and nothing
-  replaces them yet. The suggested fix is for the consumer's warm job, which
-  runs every two minutes, to probe `/healthz` and log `[plinth] down` on a
-  failure. As a side effect it would keep one instance warm.
-- **No custom domain.** `plinth-rho.vercel.app` is Vercel-assigned. Moving to
-  something like `img.lastlook.com.au` needs a DNS record, the domain added
-  to the project, the host added to the consumer's `IMAGE_HOSTS`, and
-  `PLINTH_BASE_URL` changed. Every tile is processed once more, because the
-  host is part of the URL.
-- **The signing key spent a month on a personal account.** It also still sits
-  in plain text at `deploy/azure/.state/signing-key` on the original
-  operator's machine. Move it to the password manager, delete the file, and
-  consider a rotation.
 - **The consumer's tiles are 3:4, the canvas is 4:5.** Every tile loses about
   6% of its width to the crop. Wide items sit at 92% of the canvas, so they
   clear it by under a percent.
