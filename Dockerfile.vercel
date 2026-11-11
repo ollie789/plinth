@@ -10,7 +10,7 @@
 #     consumer's image optimiser (Mahir's /_next/image) caches every result.
 # Secrets come from the Vercel project's environment, never this file (the
 # repo is public): PLINTH_SIGNING_KEY is required there.
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props Plinth.sln ./
 COPY src/Plinth.Core/Plinth.Core.csproj src/Plinth.Core/
