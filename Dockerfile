@@ -10,7 +10,7 @@ RUN dotnet restore src/Plinth.Cli/Plinth.Cli.csproj
 COPY src/ src/
 RUN dotnet publish src/Plinth.Cli/Plinth.Cli.csproj -c Release -o /app --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
 ENV ASPNETCORE_HTTP_PORTS=8080 \
